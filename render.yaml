@@ -1,0 +1,36 @@
+# Render blueprint — https://render.com/docs/blueprint-spec
+#
+# Deploy: push this repo to GitHub, then in Render choose
+# New → Blueprint and point it at the repo. Render reads this file.
+#
+# ONE WORKER, ALWAYS. Game state lives in memory; a second worker process
+# would hold a second, divergent copy of every table.
+
+services:
+  - type: web
+    name: kingdom-of-toads
+    runtime: python
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT --workers 1
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.8"
+      # Where saved games are written. On the free plan the filesystem is
+      # ephemeral, so this only survives in-process restarts — see the disk
+      # block below for real durability.
+      - key: KOT_DATA_DIR
+        value: ./data
+
+    # A free instance gets a fresh, empty filesystem every time it spins up
+    # after idling or is redeployed, so games in progress are lost. To keep
+    # them, move to the Starter plan and uncomment this disk, then set
+    # KOT_DATA_DIR to /var/data:
+    #
+    # disk:
+    #   name: kot-data
+    #   mountPath: /var/data
+    #   sizeGB: 1

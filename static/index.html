@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kingdom of Toads</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<header id="topbar">
+  <h1>Kingdom of Toads</h1>
+  <div id="status-line"></div>
+  <button id="pause-button" class="ghost" type="button" hidden>Pause</button>
+  <div id="keepalive">
+    <span id="keepalive-text"></span>
+    <button id="keepalive-button" class="ghost" type="button">Keep awake</button>
+  </div>
+  <div id="table-code"></div>
+</header>
+
+<!-- ------------------------------------------------------------------ -->
+<main id="screen-home" class="screen">
+  <section class="panel">
+    <h2>New table</h2>
+    <div class="form-row">
+      <label>Your name <input id="host-name" value="Player 1" maxlength="20"></label>
+      <label>Players
+        <select id="player-count">
+          <option>2</option><option>3</option><option selected>4</option>
+          <option>5</option><option>6</option>
+        </select>
+      </label>
+      <label>Rounds <input id="rounds" type="number" min="1" max="20" value="6"></label>
+      <label title="Per phase. When it runs out, a bot plays a safe default for anyone who has not committed.">
+        Timer (s) <input id="timer" type="number" min="10" max="3600" step="10" value="90">
+      </label>
+      <label>Auction
+        <select id="auction-mode">
+          <option value="blind" selected>Blind (sealed bids)</option>
+          <option value="live">Live (open ascending)</option>
+        </select>
+      </label>
+    </div>
+    <div id="seat-config"></div>
+    <button id="create-table" class="primary">Create table</button>
+    <p class="hint">Seats set to Bot are filled immediately. Human seats get a
+      join link you can send to someone.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Join a table</h2>
+    <div class="form-row">
+      <label>Code <input id="join-code" maxlength="8" placeholder="ABCDE"></label>
+      <label>Your name <input id="join-name" value="Player" maxlength="20"></label>
+      <button id="join-table">Join</button>
+    </div>
+    <p id="home-error" class="error"></p>
+  </section>
+</main>
+
+<!-- ------------------------------------------------------------------ -->
+<main id="screen-lobby" class="screen" hidden>
+  <section class="panel">
+    <h2>Lobby</h2>
+    <p class="share">Share this link: <code id="share-url"></code></p>
+    <table class="seats">
+      <thead><tr><th>Seat</th><th>Who</th><th>Status</th></tr></thead>
+      <tbody id="lobby-seats"></tbody>
+    </table>
+    <p id="lobby-settings" class="hint"></p>
+    <button id="start-game" class="primary">Start game</button>
+    <p id="lobby-error" class="error"></p>
+  </section>
+</main>
+
+<!-- ------------------------------------------------------------------ -->
+<main id="screen-game" class="screen" hidden>
+  <div class="board">
+
+    <section class="panel col-you">
+      <h2>Your kingdom</h2>
+      <div id="my-resources" class="resources"></div>
+      <div id="happiness-track"></div>
+      <h3>Mat</h3>
+      <div id="my-mat" class="mat"></div>
+      <h3>Property <span id="my-vp" class="muted"></span></h3>
+      <div id="my-cards" class="cards"></div>
+    </section>
+
+    <section class="panel col-action">
+      <h2 id="action-title">Waiting</h2>
+      <div id="action-panel"></div>
+      <div id="auction-panel"></div>
+      <p id="action-error" class="error"></p>
+    </section>
+
+    <section class="panel col-others">
+      <h2>Table</h2>
+      <div id="opponents"></div>
+    </section>
+
+  </div>
+  <section class="panel log-panel">
+    <h2>Log</h2>
+    <div id="log"></div>
+  </section>
+</main>
+
+<div id="vote-overlay" hidden>
+  <div id="vote-cards"></div>
+</div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>

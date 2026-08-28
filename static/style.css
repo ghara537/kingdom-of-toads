@@ -1,0 +1,240 @@
+/* Kingdom of Toads — playtest UI. Legibility over decoration. */
+
+:root {
+  --bg: #f6f5f1;
+  --panel: #ffffff;
+  --ink: #1d2021;
+  --muted: #6b7176;
+  --line: #d8d5cd;
+  --accent: #2f6f4f;
+
+  --fields: #3f8f57;
+  --mine: #b07c1e;
+  --rest: #3a72a8;
+  --military: #ab3b34;
+
+  --flies: #4a7c2f;
+  --gold: #a37312;
+  --happy: #3a72a8;
+  --toads: #5a4f8f;
+
+  --ok: #2f7d4f;
+  --warn: #b4522a;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+h1 { font-size: 18px; margin: 0; }
+h2 { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+h3 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+
+.num, code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); font-weight: normal; }
+.error { color: var(--warn); min-height: 18px; margin: 8px 0 0; }
+.hint { color: var(--muted); font-size: 13px; }
+
+/* ---------------------------------------------------------------- header */
+
+#topbar {
+  display: flex; align-items: center; gap: 20px;
+  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; z-index: 10;
+}
+#status-line { flex: 1; font-size: 14px; }
+#status-line .phase { font-weight: 600; }
+#status-line .waiting { color: var(--warn); }
+#status-line .timer { font-family: ui-monospace, monospace; color: var(--muted); }
+#status-line .timer.urgent { color: var(--warn); font-weight: 700; }
+button.tiny { padding: 1px 6px; font-size: 11px; color: var(--muted); }
+#table-code { font-family: ui-monospace, monospace; color: var(--muted); }
+
+#keepalive { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+#keepalive-text { font-family: ui-monospace, monospace; white-space: nowrap; }
+#keepalive.idle #keepalive-text { color: var(--warn); }
+#keepalive.waking #keepalive-text { color: var(--gold); }
+#keepalive button { padding: 3px 9px; font-size: 12px; }
+
+/* ---------------------------------------------------------------- layout */
+
+.screen { padding: 16px; max-width: 1500px; margin: 0 auto; }
+.panel {
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 14px; margin-bottom: 14px;
+}
+.board { display: grid; grid-template-columns: 320px minmax(340px, 1fr) 360px; gap: 14px; align-items: start; }
+@media (max-width: 1100px) { .board { grid-template-columns: 1fr; } }
+
+.form-row { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; margin-bottom: 12px; }
+label { display: flex; flex-direction: column; font-size: 13px; color: var(--muted); gap: 4px; }
+input, select, button { font: inherit; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink); }
+input[type=number] { width: 80px; }
+button { cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button.primary { background: var(--accent); color: #fff; border-color: var(--accent); padding: 8px 16px; }
+button.ghost { background: transparent; }
+
+table.seats { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
+table.seats th, table.seats td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
+table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; }
+.share code { background: #efeee9; padding: 3px 6px; border-radius: 4px; }
+
+.seat-row { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; font-size: 14px; }
+.seat-row .seat-name { width: 60px; color: var(--muted); }
+
+/* ------------------------------------------------------------- resources */
+
+.resources { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.res { border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; text-align: center; }
+.res .v { font-size: 22px; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.res .k { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.res.flies .v { color: var(--flies); }
+.res.gold .v { color: var(--gold); }
+.res.toads .v { color: var(--toads); }
+.res.happiness .v { color: var(--happy); }
+
+/* ------------------------------------------------------- happiness track */
+
+.track { margin: 14px 0 4px; }
+.track-cells { display: flex; gap: 2px; }
+.track-cells .cell {
+  flex: 1; height: 26px; border-radius: 2px; position: relative;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px; color: #fff9; font-family: ui-monospace, monospace;
+}
+.cell.b1 { background: #c56b58; }   /* 1-5   : 4 flies */
+.cell.b2 { background: #cf9a55; }   /* 6-10  : 3 flies */
+.cell.b3 { background: #7fa85e; }   /* 11-15 : 2 flies */
+.cell.b4 { background: #4b8f6f; }   /* 16-20 : 1 fly   */
+.cell.band-start { border-left: 2px solid var(--ink); }
+.cell.here { outline: 3px solid var(--ink); outline-offset: -1px; color: #fff; font-weight: 700; font-size: 12px; }
+.track-legend { display: flex; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.track-legend span { flex: 1; text-align: center; }
+.track-caption { font-size: 13px; margin-top: 6px; }
+.track-caption b { font-family: ui-monospace, monospace; }
+
+.minitrack { display: flex; gap: 1px; height: 8px; margin: 4px 0; }
+.minitrack .cell { flex: 1; border-radius: 1px; }
+.minitrack .cell.here { outline: 2px solid var(--ink); outline-offset: -1px; }
+
+/* -------------------------------------------------------------- the mat */
+
+.mat { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.area {
+  border: 1px solid var(--line); border-top: 3px solid var(--line);
+  border-radius: 5px; padding: 8px;
+}
+.area.fields { border-top-color: var(--fields); }
+.area.mine { border-top-color: var(--mine); }
+.area.rest { border-top-color: var(--rest); }
+.area.military { border-top-color: var(--military); }
+.area .name { font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+.area .count { font-size: 26px; font-family: ui-monospace, monospace; line-height: 1.1; }
+.area .rate { font-size: 12px; color: var(--muted); }
+.area .bonus { font-size: 12px; margin-top: 4px; }
+.area .bonus b { font-family: ui-monospace, monospace; }
+.area .stepper { display: flex; gap: 4px; align-items: center; margin-top: 6px; }
+.area .stepper button { padding: 2px 10px; }
+
+/* -------------------------------------------------------------- cards */
+
+.cards { display: flex; flex-wrap: wrap; gap: 5px; }
+.card-chip {
+  border: 1px solid var(--line); border-radius: 4px; padding: 3px 7px;
+  font-size: 12px; background: #fbfaf7; cursor: default;
+}
+.card-chip .vp { font-family: ui-monospace, monospace; color: var(--muted); margin-left: 5px; }
+.card-chip.engine { border-left: 3px solid var(--fields); }
+.card-chip.instant { border-left: 3px solid var(--gold); }
+.card-chip.flat { border-left: 3px solid var(--toads); }
+.card-chip.conditional { border-left: 3px solid var(--rest); }
+
+/* ------------------------------------------------------------- auction */
+
+.slate { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.slate-card {
+  border: 1px solid var(--line); border-radius: 5px; padding: 8px;
+  width: 150px; font-size: 12px; background: #fbfaf7;
+}
+.slate-card.current { border-color: var(--accent); box-shadow: 0 0 0 2px #2f6f4f33; background: #fff; }
+.slate-card.done { opacity: .6; }
+.slate-card.burned { opacity: .6; background: #f3e7e4; }
+.slate-card .title { font-weight: 600; font-size: 13px; }
+.slate-card .text { color: var(--muted); margin: 3px 0; min-height: 30px; }
+.slate-card .outcome { font-family: ui-monospace, monospace; font-size: 11px; }
+.slate-card .order { float: right; color: var(--muted); font-family: ui-monospace, monospace; }
+
+/* ----------------------------------------------------------- opponents */
+
+.opponent { border: 1px solid var(--line); border-radius: 5px; padding: 8px 10px; margin-bottom: 8px; }
+.opponent.self { background: #f7fbf8; border-color: #b9d4c3; }
+.opponent .head { display: flex; align-items: center; gap: 6px; }
+.opponent .who { font-weight: 600; flex: 1; }
+.opponent .stats { display: flex; gap: 12px; font-family: ui-monospace, monospace; font-size: 13px; margin-top: 2px; }
+.opponent .stats .f { color: var(--flies); }
+.opponent .stats .g { color: var(--gold); }
+.opponent .stats .t { color: var(--toads); }
+.opponent .stats .h { color: var(--happy); }
+.opponent .stats .vp { margin-left: auto; font-weight: 700; }
+.opponent .cards { margin-top: 5px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; }
+.dot.on { background: var(--ok); }
+.dot.off { background: #c8635a; }
+.pill { font-size: 11px; padding: 1px 6px; border-radius: 9px; border: 1px solid var(--line); color: var(--muted); }
+.pill.ready { border-color: var(--ok); color: var(--ok); }
+.pill.thinking { border-color: var(--warn); color: var(--warn); }
+.marker { color: var(--gold); font-size: 14px; }
+
+/* ---------------------------------------------------------------- misc */
+
+.placement-summary { font-size: 13px; margin: 8px 0; }
+.placement-summary b { font-family: ui-monospace, monospace; }
+#log { max-height: 220px; overflow-y: auto; font-size: 13px; }
+#log .entry { padding: 2px 0; border-bottom: 1px solid #f0eee8; }
+#log .entry .r { color: var(--muted); font-family: ui-monospace, monospace; margin-right: 8px; }
+#log .entry.war, #log .entry.war_tie { color: var(--military); }
+#log .entry.card_won { color: var(--accent); }
+#log .entry.tie_burn, #log .entry.starve { color: var(--warn); }
+
+.scoreboard { width: 100%; border-collapse: collapse; }
+.scoreboard th, .scoreboard td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: right; font-family: ui-monospace, monospace; font-size: 13px; }
+.scoreboard th:first-child, .scoreboard td:first-child { text-align: left; font-family: inherit; }
+.scoreboard tr.winner { background: #eef7f0; font-weight: 700; }
+
+/* ------------------------------------------------------------ kick votes */
+
+/* Anchored to the bottom and deliberately NOT a blocking modal: the card tells
+   the player being voted on to commit their move, so the board underneath has
+   to stay clickable. Only the cards themselves take pointer events. */
+#vote-overlay {
+  position: fixed; inset: auto 0 16px 0; z-index: 100;
+  display: flex; justify-content: center;
+  padding: 0 16px; pointer-events: none;
+}
+#vote-cards {
+  display: flex; flex-direction: column; gap: 12px;
+  max-height: 70vh; overflow-y: auto; pointer-events: auto;
+}
+.vote-card {
+  background: var(--panel); border: 1px solid var(--line); border-top: 4px solid var(--warn);
+  border-radius: 6px; padding: 16px 18px; width: 420px; max-width: 90vw;
+  box-shadow: 0 8px 30px #0003;
+}
+.vote-card h3 { margin: 0 0 6px; font-size: 15px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+.vote-card p { margin: 0 0 10px; font-size: 14px; }
+.vote-card .who { font-weight: 700; }
+.vote-card .buttons { display: flex; gap: 8px; }
+.vote-card .tally { font-size: 12px; color: var(--muted); margin-top: 8px; }
+.vote-card .countdown { font-family: ui-monospace, monospace; }
+.vote-card.subject { border-top-color: var(--gold); }
+button.danger { background: var(--warn); color: #fff; border-color: var(--warn); }
+
+#pause-button[data-paused="true"] { border-color: var(--warn); color: var(--warn); font-weight: 700; }
+#status-line .paused { color: var(--warn); font-weight: 700; }
