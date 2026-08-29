@@ -46,7 +46,7 @@ MAX_PLAYERS = 6
 # ---------------------------------------------------------------------------
 
 START_FLIES = 10
-START_GOLD = 5
+START_GOLD = 10
 START_TOADS = 2
 START_HAPPINESS = 10
 

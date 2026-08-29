@@ -170,6 +170,7 @@ table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-tr
 .slate-card .text { color: var(--muted); margin: 3px 0; min-height: 30px; }
 .slate-card .outcome { font-family: ui-monospace, monospace; font-size: 11px; }
 .slate-card .order { float: right; color: var(--muted); font-family: ui-monospace, monospace; }
+.slate-card.upcoming { border-style: dashed; background: #fdfcf9; }
 
 /* ----------------------------------------------------------- opponents */
 

@@ -35,12 +35,24 @@ def stack_deck(state: engine.GameState, card_ids: list[str]) -> None:
     state.deck = filler + list(reversed(card_ids))
 
 
-def to_auction(state: engine.GameState, slate: list[str]) -> engine.GameState:
-    """Skip recruitment and land on the first card of a chosen slate."""
+def to_auction(
+    state: engine.GameState, slate: list[str], gold: int | None = None
+) -> engine.GameState:
+    """Skip recruitment and land on the first card of a chosen slate.
+
+    Pass ``gold`` to pin every purse: auction scenarios turn on exactly how
+    much money is on the table, and that must not drift when START_GOLD is
+    retuned.
+    """
     stack_deck(state, slate)
-    return commit_all(
+    state = commit_all(
         state, {p.id: {"type": "recruit", "count": 0} for p in state.players}
     )
+    if gold is not None:
+        for player in state.players:
+            player.gold = gold
+        engine._prepare_card(state)
+    return state
 
 
 def set_phase(state: engine.GameState, phase: str) -> None:
@@ -65,7 +77,10 @@ def happiness(state: engine.GameState) -> dict[str, int]:
 def test_starting_setup_matches_design():
     state = make_game(4)
     for p in state.players:
-        assert (p.flies, p.gold, p.toads, p.happiness) == (10, 5, 2, 10)
+        assert (p.flies, p.gold, p.toads, p.happiness) == (
+            config.START_FLIES, config.START_GOLD,
+            config.START_TOADS, config.START_HAPPINESS,
+        )
     assert state.round == 1
     assert state.phase == engine.PHASE_RECRUIT
     assert len(state.deck) == 51
@@ -174,7 +189,7 @@ def test_unknown_seat_and_malformed_payloads_are_rejected():
 
 
 def test_highest_blind_bid_wins_and_pays_its_own_bid():
-    state = to_auction(make_game(3), ["monument", "granary", "festival"])
+    state = to_auction(make_game(3), ["monument", "granary", "festival"], gold=5)
     state = commit_all(
         state,
         {
@@ -220,7 +235,7 @@ def test_an_unbid_card_leaves_the_game():
 
 
 def test_bid_may_not_exceed_gold_held_and_must_clear_the_minimum():
-    state = to_auction(make_game(2), ["monument", "monument"])
+    state = to_auction(make_game(2), ["monument", "monument"], gold=5)
     with pytest.raises(engine.InvalidAction):
         engine.submit_action(state, "p1", {"type": "bid", "amount": 6})
     with pytest.raises(engine.InvalidAction):
@@ -230,7 +245,7 @@ def test_bid_may_not_exceed_gold_held_and_must_clear_the_minimum():
 
 
 def test_tie_goes_to_one_rebid_that_may_be_equal_or_higher():
-    state = to_auction(make_game(2), ["grand_monument", "monument"])
+    state = to_auction(make_game(2), ["grand_monument", "monument"], gold=5)
     state = commit_all(
         state,
         {"p1": {"type": "bid", "amount": 4}, "p2": {"type": "bid", "amount": 4}},
@@ -267,7 +282,7 @@ def test_only_tied_players_take_part_in_the_rebid():
 
 
 def test_a_second_tie_burns_the_card_and_fines_every_tied_player():
-    state = to_auction(make_game(3), ["grand_monument", "monument", "monument"])
+    state = to_auction(make_game(3), ["grand_monument", "monument", "monument"], gold=5)
     tie = {
         "p1": {"type": "bid", "amount": 4},
         "p2": {"type": "bid", "amount": 4},
@@ -318,7 +333,7 @@ def test_one_player_may_sweep_the_whole_slate():
 
 
 def test_eligibility_is_rechecked_after_each_card():
-    state = to_auction(make_game(2), ["monument", "monument"])
+    state = to_auction(make_game(2), ["monument", "monument"], gold=5)
     state = commit_all(
         state,
         {"p1": {"type": "bid", "amount": 3}, "p2": {"type": "bid", "amount": 0}},
@@ -328,7 +343,7 @@ def test_eligibility_is_rechecked_after_each_card():
 
 
 def test_instant_cards_resolve_on_purchase():
-    state = to_auction(make_game(2), ["granary", "festival"])
+    state = to_auction(make_game(2), ["granary", "festival"], gold=5)
     state.player("p1").happiness = 18
     state = commit_all(
         state,
@@ -342,7 +357,7 @@ def test_instant_cards_resolve_on_purchase():
 
 
 def test_toads_from_an_instant_are_placeable_the_same_round():
-    state = to_auction(make_game(2), ["spawning_pool", "monument"])
+    state = to_auction(make_game(2), ["spawning_pool", "monument"], gold=5)
     state = commit_all(
         state,
         {"p1": {"type": "bid", "amount": 3}, "p2": {"type": "bid", "amount": 0}},
@@ -363,6 +378,7 @@ def test_live_auction_runs_ascending_until_all_but_one_pass():
     state = to_auction(
         make_game(3, auction_mode=config.AUCTION_MODE_LIVE),
         ["grand_monument", "monument", "monument"],
+        gold=5,
     )
     assert state.auction.stage == engine.STAGE_LIVE
     assert engine.pending_players(state) == ["p1"]
@@ -384,6 +400,84 @@ def test_live_auction_raises_must_actually_raise():
         engine.submit_action(state, "p2", {"type": "bid", "amount": 3})
     state = engine.submit_action(state, "p2", {"type": "bid", "amount": 4})
     assert state.auction.high_bidder == "p2"
+
+
+def test_next_rounds_slate_is_revealed_when_this_auction_ends():
+    """You place your toads already knowing what is coming up for sale."""
+    state = to_auction(make_game(2), ["monument", "festival"])
+    assert state.upcoming == []          # not while this auction is running
+    state = commit_all(
+        state,
+        {"p1": {"type": "bid", "amount": 0}, "p2": {"type": "bid", "amount": 0}},
+    )
+    state = commit_all(
+        state,
+        {"p1": {"type": "bid", "amount": 0}, "p2": {"type": "bid", "amount": 0}},
+    )
+    assert state.phase == engine.PHASE_PLACEMENT
+    assert len(state.upcoming) == 2      # one card per player
+    preview = list(state.upcoming)
+    assert any(e["type"] == "upcoming" for e in state.log)
+
+    # It is public: everyone sees the same cards at the same moment.
+    for pid in ("p1", "p2"):
+        assert engine.player_view(state, pid)["upcoming"] == preview
+
+    # And it is exactly what comes up for auction next round.
+    state = commit_all(state, {"p1": place(fields=2), "p2": place(fields=2)})
+    state = commit_all(
+        state,
+        {"p1": {"type": "feed", "keep": 2}, "p2": {"type": "feed", "keep": 2}},
+    )
+    assert state.round == 2
+    assert engine.player_view(state, "p1")["upcoming"] == preview  # still visible
+    state = commit_all(
+        state, {p.id: {"type": "recruit", "count": 0} for p in state.players}
+    )
+    assert [r["card"] for r in state.auction.results] == preview
+    assert state.upcoming == []
+
+
+def test_the_final_round_has_no_slate_to_preview():
+    state = make_game(2, rounds=1)
+    state = to_auction(state, ["monument", "festival"])
+    state = commit_all(
+        state,
+        {"p1": {"type": "bid", "amount": 0}, "p2": {"type": "bid", "amount": 0}},
+    )
+    state = commit_all(
+        state,
+        {"p1": {"type": "bid", "amount": 0}, "p2": {"type": "bid", "amount": 0}},
+    )
+    assert state.phase == engine.PHASE_PLACEMENT
+    assert state.upcoming == []          # nothing comes after the last round
+
+
+def test_previewed_cards_are_still_accounted_for():
+    state = make_game(3)   # a real deck, not a stacked one
+    state = commit_all(
+        state, {p.id: {"type": "recruit", "count": 0} for p in state.players}
+    )
+    for _ in range(3):
+        state = commit_all(
+            state,
+            {pid: {"type": "bid", "amount": 0} for pid in engine.pending_players(state)},
+        )
+    owned = sum(len(p.cards) for p in state.players)
+    total = owned + len(state.deck) + len(state.removed) + len(state.upcoming)
+    assert total == card_lib.deck_size(3)
+
+
+def test_a_preview_survives_a_serialise_reload():
+    state = to_auction(make_game(2), ["monument", "festival"])
+    for _ in range(2):
+        state = commit_all(
+            state,
+            {pid: {"type": "bid", "amount": 0} for pid in engine.pending_players(state)},
+        )
+    assert state.upcoming
+    restored = engine.deserialize(json.loads(json.dumps(engine.serialize(state))))
+    assert restored.upcoming == state.upcoming
 
 
 def test_deck_exhaustion_shortens_or_skips_the_auction():
@@ -425,7 +519,7 @@ def test_production_rates():
     )
     p1 = state.player("p1")
     assert p1.flies == 16          # 10 + 2*2 production + 2 Fields majority
-    assert p1.gold == 9            # 5 + 2*1 production + 2 Mine majority
+    assert p1.gold == config.START_GOLD + 4   # 2*1 production + 2 Mine majority
     # 10 + 1 rest + 1 Rest majority (round 1) - 1 war loss = 11
     assert p1.happiness == 11
     assert state.player("p2").flies == 10   # Military produces nothing
@@ -451,8 +545,8 @@ def test_majority_bonus_goes_to_a_unique_leader():
         state,
         {"p1": place(mine=3), "p2": place(mine=2, fields=1), "p3": place(fields=3)},
     )
-    assert state.player("p1").gold == 13   # 5 + 3*2 + 2 majority
-    assert state.player("p2").gold == 9    # 5 + 2*2, no bonus
+    assert state.player("p1").gold == config.START_GOLD + 8   # 3*2 + 2 majority
+    assert state.player("p2").gold == config.START_GOLD + 4   # 2*2, no bonus
     assert state.player("p3").flies == 18  # 10 + 3*2 + 2 majority
 
 
@@ -463,7 +557,7 @@ def test_an_empty_area_awards_no_majority():
         p.toads = 2
     state = commit_all(state, {"p1": place(fields=2), "p2": place(fields=2)})
     # Nobody was in Mine or Rest, so no gold or happiness bonus was handed out.
-    assert [p.gold for p in state.players] == [5, 5]
+    assert [p.gold for p in state.players] == [config.START_GOLD] * 2
     assert [p.happiness for p in state.players] == [10, 10]
 
 
@@ -475,7 +569,7 @@ def test_majority_bonuses_escalate_with_the_round():
         p.toads = 2
     state = commit_all(state, {"p1": place(fields=2), "p2": place(mine=2)})
     assert state.player("p1").flies == 19   # 10 + 4 + 5 (round 4 bonus)
-    assert state.player("p2").gold == 14    # 5 + 4 + 5
+    assert state.player("p2").gold == config.START_GOLD + 9   # 2*2 + round-4 bonus
 
 
 def test_war_winner_takes_the_token_and_everyone_else_loses_happiness():
@@ -767,7 +861,8 @@ def test_public_material_is_visible_to_everyone():
     state.player("p1").cards = ["monument"]
     state.player("p1").war_tokens = [3]
     seen = engine.player_view(state, "p2")["players"][0]
-    assert seen["flies"] == 10 and seen["gold"] == 5
+    assert seen["flies"] == config.START_FLIES
+    assert seen["gold"] == config.START_GOLD
     assert seen["toads"] == 2 and seen["happiness"] == 10
     assert seen["cards"] == ["monument"] and seen["war_tokens"] == [3]
     assert seen["recruit_cost"] == 3
@@ -826,7 +921,7 @@ def test_a_timeout_can_target_one_seat_only():
 
 
 def test_a_rebid_timeout_matches_the_tie_rather_than_folding():
-    state = to_auction(make_game(2), ["monument", "monument"])
+    state = to_auction(make_game(2), ["monument", "monument"], gold=5)
     state = commit_all(
         state,
         {"p1": {"type": "bid", "amount": 4}, "p2": {"type": "bid", "amount": 4}},
@@ -915,7 +1010,8 @@ def test_a_full_game_plays_to_a_score_without_breaking_an_invariant(players, mod
     assert state.scores["winners"]
     # Every card is accounted for: still in the deck, owned, or removed.
     owned = sum(len(p.cards) for p in state.players)
-    assert owned + len(state.deck) + len(state.removed) == card_lib.deck_size(players)
+    accounted = owned + len(state.deck) + len(state.removed) + len(state.upcoming)
+    assert accounted == card_lib.deck_size(players)
 
 
 def test_a_seed_reproduces_a_whole_game():

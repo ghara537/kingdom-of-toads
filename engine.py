@@ -122,6 +122,9 @@ class GameState:
     # simultaneous, where it is a display token only.
     first_player: int = 0
     deck: list[str] = field(default_factory=list)
+    # Next round's slate, drawn and revealed as soon as this round's auction
+    # ends, so placement can be made knowing what is coming up for sale.
+    upcoming: list[str] = field(default_factory=list)
     removed: list[str] = field(default_factory=list)     # left the game
     auction: AuctionState | None = None
     # Hidden commitments for the phase in progress, keyed by player id.
@@ -454,9 +457,16 @@ def _resolve_recruit(state: GameState) -> None:
 # --- Phase 2 ---------------------------------------------------------------
 
 
-def _begin_auction(state: GameState) -> None:
+def _draw_slate(state: GameState) -> list[str]:
     wanted = len(state.players) * config.AUCTION_CARDS_PER_PLAYER
-    slate = [state.deck.pop() for _ in range(min(wanted, len(state.deck)))]
+    return [state.deck.pop() for _ in range(min(wanted, len(state.deck)))]
+
+
+def _begin_auction(state: GameState) -> None:
+    # From round 2 on the slate was already revealed at the end of the previous
+    # round's auction, so players placed their toads knowing what was coming.
+    slate = state.upcoming or _draw_slate(state)
+    state.upcoming = []
     state.auction = AuctionState(
         slate=slate,
         results=[
@@ -701,6 +711,21 @@ def _finish_card(
 
 
 def _begin_placement(state: GameState) -> None:
+    """Close the auction, reveal next round's slate, then place toads.
+
+    Revealing here is the whole point: you decide where your toads go — and
+    how much Mine you need — already knowing what will be for sale next round.
+    """
+    if not state.upcoming and state.round < state.settings.rounds:
+        state.upcoming = _draw_slate(state)
+        if state.upcoming:
+            names = ", ".join(card_lib.get(cid).name for cid in state.upcoming)
+            _log(
+                state,
+                "upcoming",
+                slate=list(state.upcoming),
+                text=f"Next round's slate: {names}.",
+            )
     state.phase = PHASE_PLACEMENT
     state.commitments = {}
 
@@ -1019,6 +1044,8 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
         "players": players,
         "waiting_on": list(waiting),
         "deck_remaining": len(state.deck),
+        # Public by design: everyone sees next round's slate at the same moment.
+        "upcoming": list(state.upcoming),
         "removed": list(state.removed),
         "bonuses": {
             "fields": config.majority_bonus(config.FIELDS, rnd)[1],
@@ -1085,6 +1112,7 @@ def deserialize(data: dict[str, Any]) -> GameState:
         phase=data["phase"],
         first_player=data.get("first_player", 0),
         deck=list(data["deck"]),
+        upcoming=list(data.get("upcoming", [])),
         removed=list(data["removed"]),
         auction=AuctionState(**auction) if auction else None,
         commitments=copy.deepcopy(data["commitments"]),

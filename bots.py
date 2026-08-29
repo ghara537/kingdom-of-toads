@@ -12,6 +12,7 @@ rules, which is why they live with the strategies.
 
 from __future__ import annotations
 
+import math
 import random
 from typing import Any
 
@@ -60,6 +61,8 @@ class Bot:
     happiness_floor = 8
     # How many toads we will divert to switch on an owned engine card.
     threshold_stretch = 2
+    # How many toads we will divert into Mine for next round's slate.
+    mine_stretch = 2
     # Willingness to keep fighting a tie-off: 0 folds, 1 always matches.
     tie_off_nerve = 0.5
 
@@ -157,8 +160,11 @@ class Bot:
         return tied
 
     def value_card(self, view: dict, card_id: str) -> int:
-        if _me(view)["gold"] < config.AUCTION_ELIGIBILITY:
-            return 0
+        """What this card is worth to us in gold, affordability aside.
+
+        Used both for bidding and for planning ahead against next round's
+        slate, so it deliberately does not care what we can pay today.
+        """
         card = card_lib.get(card_id)
         value = BASE_CARD_VALUE.get(card_id, 4) * self.card_taste.get(card_id, 1.0)
         rounds_left = view["rounds"] - view["round"] + 1
@@ -182,8 +188,34 @@ class Bot:
         placement = _allocate(toads, self.weights)
         placement = self._military_correction(view, placement)
         placement = self._happiness_correction(view, placement)
+        placement = self._upcoming_correction(view, placement)
+        # Thresholds go last so an owned engine card always gets its staff:
+        # a card that fires every round beats one round of extra mining.
         placement = self._threshold_correction(view, placement)
         return placement
+
+    def _upcoming_correction(self, view: dict, placement: dict) -> dict:
+        """Mine ahead of next round's slate, which is already face-up.
+
+        Gold spent next round has to be dug this round, so a card worth having
+        is worth a toad or two in the Mine now.
+        """
+        upcoming = view.get("upcoming") or []
+        if not upcoming:
+            return placement
+        me = _me(view)
+        want = max(self.value_card(view, card_id) for card_id in upcoming)
+        shortfall = want - me["gold"]
+        if shortfall <= 0:
+            return placement
+        per_toad = config.PRODUCTION[config.MINE][config.GOLD]
+        extra = min(self.mine_stretch, math.ceil(shortfall / per_toad))
+        return _move_to(
+            placement,
+            config.MINE,
+            placement[config.MINE] + extra,
+            donor_order=[a for a in self._donors() if a != config.MINE],
+        )
 
     def military_target(self, view: dict) -> int:
         """How many toads to send to war. Read from public last-round data."""
@@ -283,6 +315,7 @@ class Farmer(Bot):
     recruit_cost_ceiling = 4
     happiness_floor = 9
     tie_off_nerve = 0.4
+    mine_stretch = 1
 
 
 class Miner(Bot):
@@ -303,6 +336,7 @@ class Miner(Bot):
     recruit_cost_ceiling = 3
     happiness_floor = 7
     tie_off_nerve = 0.7   # deep purse, happy to play chicken
+    mine_stretch = 3
 
     def value_card(self, view: dict, card_id: str) -> int:
         # A miner outbids the table by design.
@@ -325,6 +359,7 @@ class Warlord(Bot):
     recruit_cost_ceiling = 4
     happiness_floor = 6
     tie_off_nerve = 0.8
+    mine_stretch = 1
 
     def military_target(self, view: dict) -> int:
         me = _me(view)
@@ -353,6 +388,7 @@ class Balanced(Bot):
     recruit_cost_ceiling = 3
     happiness_floor = 9
     tie_off_nerve = 0.5
+    mine_stretch = 2
 
     def place(self, view: dict) -> dict:
         placement = super().place(view)

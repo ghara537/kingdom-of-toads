@@ -204,10 +204,48 @@ def test_bots_never_bid_without_the_eligibility_minimum():
     state = to_auction(make_game(3), ["grand_monument", "monument", "monument"])
     state.player("p1").gold = 2
     engine._prepare_card(state)
+    # An ineligible seat is never even asked...
+    assert "p1" not in engine.pending_players(state)
+    # ...and on the eligibility floor exactly, a bot bids within its purse.
+    state.player("p1").gold = config.AUCTION_ELIGIBILITY
+    engine._prepare_card(state)
     for strategy in ALL_STRATEGIES:
-        # An ineligible seat is never asked, but the valuation must be zero too.
-        bot = bots.make(strategy, "p1", random.Random(0))
-        assert bot.value_card(view_for(state, "p1"), "grand_monument") == 0
+        action = bots.decide(view_for(state, "p1"), strategy, random.Random(0))
+        assert action["amount"] in (0, config.AUCTION_ELIGIBILITY)
+
+
+def test_bots_mine_ahead_of_next_rounds_slate():
+    """The slate is face-up a round early, so gold can be dug in time for it."""
+    state = make_game(2)
+    state.phase = engine.PHASE_PLACEMENT
+    state.commitments = {}
+    state.auction = None
+    for p in state.players:
+        p.toads = 6
+        p.gold = 0
+    without = bots.make("balanced", "p1", random.Random(0)).place(view_for(state, "p1"))
+
+    state.upcoming = ["grand_monument", "monument"]
+    with_preview = bots.make("balanced", "p1", random.Random(0)).place(view_for(state, "p1"))
+
+    assert with_preview[config.MINE] > without[config.MINE]
+    assert sum(with_preview.values()) == 6
+
+
+def test_a_bot_does_not_over_mine_for_a_card_it_can_already_afford():
+    state = make_game(2)
+    state.phase = engine.PHASE_PLACEMENT
+    state.commitments = {}
+    state.auction = None
+    for p in state.players:
+        p.toads = 6
+    state.player("p1").gold = 40          # can buy anything on the slate already
+    state.upcoming = ["grand_monument", "monument"]
+    rich = bots.make("balanced", "p1", random.Random(0)).place(view_for(state, "p1"))
+
+    state.player("p1").gold = 0
+    poor = bots.make("balanced", "p1", random.Random(0)).place(view_for(state, "p1"))
+    assert poor[config.MINE] > rich[config.MINE]
 
 
 def test_bots_save_up_for_a_better_card_later_in_the_slate():

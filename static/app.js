@@ -719,7 +719,7 @@ function renderOpponents(v) {
 function renderAuction(v) {
   const host = $('auction-panel');
   host.innerHTML = '';
-  if (v.phase !== 'auction' || !v.auction) return;
+  if (v.phase !== 'auction' || !v.auction) return renderUpcoming(v, host);
   const a = v.auction;
 
   const head = el('h3', null, `This round's slate — ${a.slate.length} cards, auctioned in order`);
@@ -755,6 +755,29 @@ function renderAuction(v) {
     row.appendChild(box);
   });
   host.appendChild(row);
+}
+
+/* Next round's slate, revealed the moment this round's auction ends. It is the
+ * reason to think about Mine before you place: you already know what is coming
+ * up for sale and roughly what it will cost you. */
+function renderUpcoming(v, host) {
+  if (!v.upcoming || !v.upcoming.length) return;
+  host.appendChild(el('h3', null,
+    `Next round's slate — ${v.upcoming.length} cards, in this order`));
+  const row = el('div', 'slate');
+  v.upcoming.forEach((id, i) => {
+    const c = S.catalog[id] || { name: id, text: '', vp: 0 };
+    const box = el('div', 'slate-card upcoming');
+    const title = el('div', 'title', c.name);
+    title.appendChild(el('span', 'order', '#' + (i + 1)));
+    box.appendChild(title);
+    box.appendChild(el('div', 'text', c.text));
+    box.appendChild(el('div', 'outcome', `${c.vp} VP · next round`));
+    row.appendChild(box);
+  });
+  host.appendChild(row);
+  host.appendChild(el('p', 'hint',
+    'Gold you want for these has to be mined this round.'));
 }
 
 function renderAction(v, me) {
