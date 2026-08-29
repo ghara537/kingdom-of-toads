@@ -113,6 +113,7 @@ async function boot() {
   S.cfg = await (await fetch('/api/config')).json();
   S.catalog = await (await fetch('/api/cards')).json();
   keepaliveInit();
+  cardTipInit();
   setInterval(tickTimer, 1000);
   renderSeatConfig();
 
@@ -627,8 +628,86 @@ function cardChip(id) {
   const c = S.catalog[id] || { name: id, group: '', vp: 0, text: '' };
   const chip = el('span', 'card-chip ' + c.group, c.name);
   chip.appendChild(el('span', 'vp', c.vp ? c.vp + 'vp' : '★'));
-  chip.title = `${c.name} — ${c.text}`;
+  // The tooltip is wired by delegation, so it survives every re-render.
+  chip.dataset.card = id;
+  chip.tabIndex = 0;
   return chip;
+}
+
+/* ------------------------------------------------------------ card tooltip
+ *
+ * Every card on the table is public, including the ones your opponents have
+ * already bought — so any card anywhere should explain itself on hover, not
+ * just your own. Native title tooltips took a second to appear and dropped the
+ * VP value and the toad requirement, both of which you need in order to read
+ * what a rival's engine actually does.
+ */
+
+const KIND_NOTE = {
+  engine: 'Fires every round during placement, while the requirement is met.',
+  instant: 'Fired once, at the moment it was bought.',
+  flat: 'No effect. Just points.',
+  conditional: 'Counted once, at the end of the game.',
+};
+const KIND_LABEL = {
+  engine: 'Engine', instant: 'Instant',
+  flat: 'Scoring', conditional: 'Scoring — conditional',
+};
+
+function showCardTip(target) {
+  const c = S.catalog[target.dataset.card];
+  if (!c) return;
+  const tip = $('card-tip');
+  tip.innerHTML = '';
+
+  const head = el('div', 'tip-head');
+  head.appendChild(el('span', 'tip-name', c.name));
+  // Conditional scorers have no printed VP — the effect line carries it.
+  head.appendChild(el('span', 'tip-vp', c.vp ? `${c.vp} VP` : 'VP varies'));
+  tip.appendChild(head);
+  tip.appendChild(el('div', 'tip-kind', KIND_LABEL[c.group] || c.group));
+
+  if (c.requirement) {
+    const [area, count] = c.requirement;
+    tip.appendChild(el('div', 'tip-needs',
+      `Needs ${count} toads in ${AREA_LABEL[area]}`));
+  }
+  tip.appendChild(el('div', 'tip-effect', c.text));
+  tip.appendChild(el('div', 'tip-when', KIND_NOTE[c.group] || ''));
+
+  tip.hidden = false;
+  const box = target.getBoundingClientRect();
+  const size = tip.getBoundingClientRect();
+  const gap = 8;
+  // Above by preference, below if the top of the window is in the way.
+  let top = box.top - size.height - gap;
+  if (top < gap) top = box.bottom + gap;
+  const left = Math.max(
+    gap, Math.min(box.left, window.innerWidth - size.width - gap));
+  tip.style.top = `${top}px`;
+  tip.style.left = `${left}px`;
+}
+
+function hideCardTip() {
+  $('card-tip').hidden = true;
+}
+
+function cardTipInit() {
+  // Delegated: chips are rebuilt on every state push, and rebinding each one
+  // would leak listeners.
+  document.addEventListener('mouseover', (e) => {
+    const target = e.target.closest('[data-card]');
+    if (target) showCardTip(target);
+  });
+  document.addEventListener('mouseout', (e) => {
+    if (e.target.closest('[data-card]')) hideCardTip();
+  });
+  document.addEventListener('focusin', (e) => {
+    const target = e.target.closest('[data-card]');
+    if (target) showCardTip(target);
+  });
+  document.addEventListener('focusout', hideCardTip);
+  window.addEventListener('scroll', hideCardTip, { passive: true });
 }
 
 function renderMyCards(me, v) {
@@ -732,6 +811,7 @@ function renderAuction(v) {
       + (i === a.index ? 'current' : '')
       + (entry.status === 'sold' ? ' done' : '')
       + (entry.status.startsWith('burned') ? ' burned' : ''));
+    box.dataset.card = entry.card;
     const title = el('div', 'title', c.name);
     title.appendChild(el('span', 'order', '#' + (i + 1)));
     box.appendChild(title);
@@ -768,6 +848,7 @@ function renderUpcoming(v, host) {
   v.upcoming.forEach((id, i) => {
     const c = S.catalog[id] || { name: id, text: '', vp: 0 };
     const box = el('div', 'slate-card upcoming');
+    box.dataset.card = id;
     const title = el('div', 'title', c.name);
     title.appendChild(el('span', 'order', '#' + (i + 1)));
     box.appendChild(title);

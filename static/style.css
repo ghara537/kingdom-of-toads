@@ -209,6 +209,30 @@ table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-tr
 .scoreboard th:first-child, .scoreboard td:first-child { text-align: left; font-family: inherit; }
 .scoreboard tr.winner { background: #eef7f0; font-weight: 700; }
 
+/* ---------------------------------------------------------- card tooltip */
+
+#card-tip {
+  position: fixed; z-index: 200; pointer-events: none;
+  width: 250px; padding: 10px 12px;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 6px;
+  box-shadow: 0 6px 20px #0002;
+  font-size: 13px; line-height: 1.4;
+}
+#card-tip .tip-head { display: flex; align-items: baseline; gap: 8px; }
+#card-tip .tip-name { font-weight: 700; flex: 1; }
+#card-tip .tip-vp { font-family: ui-monospace, monospace; color: var(--muted); }
+#card-tip .tip-kind {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--muted); margin: 2px 0 6px;
+}
+#card-tip .tip-effect { font-weight: 600; }
+#card-tip .tip-needs { color: var(--warn); margin-top: 4px; }
+#card-tip .tip-when { color: var(--muted); margin-top: 6px; font-size: 12px; }
+
+.card-chip { cursor: help; }
+.card-chip:focus-visible, .card-chip:hover { border-color: var(--accent); }
+
 /* ------------------------------------------------------------ kick votes */
 
 /* Anchored to the bottom and deliberately NOT a blocking modal: the card tells
