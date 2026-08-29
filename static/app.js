@@ -244,12 +244,30 @@ async function startGame() {
 
 /* -------------------------------------------------------------- socket */
 
+/* An idle WebSocket is fair game for any proxy in between — Render will drop
+ * one after about a minute of silence — so the socket has to say something
+ * periodically even when nobody is playing. The server answers with a pong we
+ * can safely ignore. */
+const WS_PING_SECONDS = 25;
+const RECONNECT_MAX_SECONDS = 10;
+
 function connect() {
   if (S.ws) { try { S.ws.close(); } catch (e) { /* ignore */ } }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const url = `${proto}://${location.host}/ws/${S.code}?token=${encodeURIComponent(S.token || '')}`;
   const ws = new WebSocket(url);
   S.ws = ws;
+
+  ws.onopen = () => {
+    S.attempts = 0;
+    clearInterval(S.heartbeat);
+    S.heartbeat = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'ping' }));
+      }
+    }, WS_PING_SECONDS * 1000);
+  };
+
   ws.onmessage = (ev) => {
     const msg = JSON.parse(ev.data);
     if (msg.type === 'state') {
@@ -259,14 +277,28 @@ function connect() {
       render();
       tickTimer();
     } else if (msg.type === 'error') {
+      if (msg.code === 'no_table') {
+        // Retrying cannot help: this table is gone for good.
+        S.gone = true;
+        $('status-line').innerHTML = '<span class="waiting">This table no longer '
+          + 'exists — it expired, or the server was restarted and lost it.</span>';
+        return;
+      }
       $('action-error').textContent = msg.message;
       $('lobby-error').textContent = msg.message;
     }
   };
+
   ws.onclose = () => {
-    $('status-line').innerHTML = '<span class="waiting">Disconnected — reconnecting…</span>';
+    clearInterval(S.heartbeat);
+    if (S.gone) return;
+    S.attempts = (S.attempts || 0) + 1;
+    const wait = Math.min(RECONNECT_MAX_SECONDS, 2 ** (S.attempts - 1));
+    $('status-line').innerHTML =
+      `<span class="waiting">Disconnected — reconnecting in ${wait}s `
+      + `(attempt ${S.attempts})</span>`;
     clearTimeout(S.retry);
-    S.retry = setTimeout(connect, 2000);
+    S.retry = setTimeout(connect, wait * 1000);
   };
 }
 
@@ -861,8 +893,34 @@ function renderUpcoming(v, host) {
     'Gold you want for these has to be mined this round.'));
 }
 
+/* The action panel is the only part of the board with typed input in it, and
+ * a state push arrives every time ANY player or bot does anything. Rebuilding
+ * it blindly threw away half-typed bids. So rebuild only when something the
+ * form actually depends on has changed — which also means a bid you are
+ * midway through typing survives a reconnect. */
+function actionSignature(v, me) {
+  const a = v.auction || {};
+  const mine = v.waiting_on.includes(v.you);
+  const placed = S.draft
+    ? Object.values(S.draft).reduce((x, y) => x + y, 0)
+    : -1;
+  const parts = [
+    v.phase, v.round, mine, Boolean(v.your_commitment),
+    me.toads, me.gold, me.flies, me.recruit_cost,
+    a.index, a.stage, a.high_bid, a.tied_amount, a.turn, placed,
+  ];
+  // While we are waiting on other people, the panel lists who — so it has to
+  // keep up. While it is our turn it must not twitch under our fingers.
+  if (!mine) parts.push(v.waiting_on.join(','));
+  return parts.join('|');
+}
+
 function renderAction(v, me) {
   const host = $('action-panel');
+  const signature = actionSignature(v, me);
+  if (signature === S.actionSig && host.childElementCount) return;
+  S.actionSig = signature;
+
   host.innerHTML = '';
   const title = $('action-title');
   const myTurn = v.waiting_on.includes(v.you);

@@ -343,7 +343,10 @@ async def game_socket(ws: WebSocket, code: str, token: str | None = None):
     try:
         table = store.get(code)
     except table_lib.TableError as exc:
-        await ws.send_json({"type": "error", "message": str(exc)})
+        # Coded so the client knows not to sit there reconnecting forever.
+        await ws.send_json(
+            {"type": "error", "code": "no_table", "message": str(exc)}
+        )
         await ws.close()
         return
 
