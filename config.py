@@ -141,7 +141,7 @@ STARVE_HAPPINESS_COST = 1       # happiness per toad returned to supply
 # Scoring — DESIGN §7
 # ---------------------------------------------------------------------------
 
-VP_PER_TOAD = 2
+VP_PER_TOAD = 1
 VP_PER_GOLD = 0
 VP_PER_HAPPINESS = 0
 VP_PER_FLY = 0

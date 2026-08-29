@@ -1,7 +1,7 @@
 # KINGDOM OF TOADS — LIVING DESIGN DOCUMENT
 
-**Version 1.0** — 27 August 2026
-**Status: FINAL for prototyping.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values.
+**Version 1.1** — 28 August 2026
+**Status: FINAL for prototyping, now being tuned in play.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values. v1.1 carries the first three changes made from the playable build (see §11).
 
 ---
 
@@ -29,7 +29,7 @@ Kingdom of Toads is a competitive engine-building board game for 2–6 players. 
 |               |        |
 | ------------- | ------ |
 | **Flies**     | **10** |
-| **Gold**      | **5**  |
+| **Gold**      | **10** |
 | **Toads**     | **2**  |
 | **Happiness** | **10** |
 
@@ -40,7 +40,9 @@ Setup is now fully specified.
 - 10 flies buys **3 toads** with 1 fly left over — you cannot afford the full 4-toad cap in round 1, which is a good soft brake.
 - That leaves you with 5 toads to place.
 - Five toads all in Fields harvests 10 flies; feeding those five costs 5. You end round 1 with roughly 6 flies and 5 toads.
-- 5 gold covers exactly one minimum bid of 3, with 2 spare.
+- 10 gold covers three minimum bids of 3, or one serious bid on a card you actually want.
+
+**Starting gold was raised from 5 to 10 in v1.1.** At 5, a player who won the first card of the slate was immediately below the 3-gold eligibility floor and locked out of the rest of the round; simulation showed roughly seven of the twenty-four cards revealed in a 6-round, 4-player game going unsold because nobody left could bid. Ten gold keeps two or three players live through a whole slate, which is what makes the face-up slate a budgeting problem rather than a race to card one.
 
 **Note that 10 sits at the very top of its band.** A single toad in Rest during round 1 pushes you to 11 happiness and drops recruitment from 3 flies to 2 for the rest of the game — a 33% discount for one toad-round. That is a very strong round-1 play and possibly an obvious one. Worth watching whether every player opens the same way; if so, starting at 9 or 11 instead would make the first decision less scripted.
 
@@ -112,13 +114,20 @@ Recruitment, placement and feeding are now all simultaneous. The **auction is th
 
 **Resolved — the full round's slate is revealed face-up at once, then auctioned one card at a time in the order revealed.**
 
-- Reveal property cards **equal to the number of players**, all face-up, before any bidding begins.
+- Reveal property cards **equal to the number of players**, all face-up.
+- **Resolved (v1.1) — the slate is revealed a full round in advance.** As soon as a round's auction finishes, the *next* round's slate is dealt face-up. Round 1 is the exception: its slate is revealed at the start of its own auction, because there is no earlier round to reveal it in.
 - Cards are then auctioned **in the order they were revealed**, one at a time.
 - **Bids are paid in gold only.** Flies cannot be bid.
 - **Minimum bid: 3 gold.**
 - **Resolved — a player holding fewer than 3 gold cannot bid at all.** They are out of the auction entirely until they mine more. This is not just a floor on bid size; it is an eligibility requirement.
 - **Resolved — there is no cap on how many properties a player may take.** A gold-rich player can sweep the entire slate in a round if they can afford it, and that is a legitimate reward for investing in Mine.
 - **Resolved — you may never bid more gold than you currently hold.** No credit, no borrowing, no bidding against a later harvest. This is a hard cap, and it is final.
+
+**Why reveal a round early.** Gold is mined in Phase 3 and spent in Phase 2 of the _following_ round, so under the old timing you had to decide how many toads to put in the Mine before knowing what your money would be for. Mining was a blind bet on the deck. Dealing the slate at the end of the previous auction closes that gap: you place your toads already knowing what is coming up for sale and roughly what it will cost you, which turns Mine placement into a real decision instead of a hedge.
+
+It also stretches the budgeting problem across two rounds rather than one. You are no longer only choosing between the cards on the table; you are choosing whether to spend now or hold for what you can already see coming.
+
+The cost is information. Nothing about the auction is concealed any more except what people intend to bid, and the shuffle stops being a source of surprise a round earlier than it used to be.
 
 **Why a cap rather than an overbid penalty.** An alternative was considered in v0.20: remove the ceiling and punish players who bid more than they can pay. It was rejected for three reasons.
 
@@ -243,7 +252,9 @@ This rate is what makes Fields worth placing in. A toad in Fields produces 2 fli
 
 **Resolved — starvation is a player choice.** You decide how many toads you want to keep alive and feed exactly that many; the rest starve and return to the supply. Nothing is forced or random.
 
-In practice this makes feeding a deliberate downsizing decision rather than a punishment inflicted on you — but the happiness cost means it is never free. Deliberately starving toads to win the end-game fly majority now costs 2 VP per toad _and_ a happiness point each, which should keep that play rare.
+In practice this makes feeding a deliberate downsizing decision rather than a punishment inflicted on you — but the happiness cost means it is never free. Deliberately starving toads to win the end-game fly majority costs 1 VP per toad _and_ a happiness point each.
+
+**This got cheaper in v1.1**, when a toad dropped from 2 VP to 1. Starving three toads in the final round to take the 5 VP fly majority is now a clear profit rather than a marginal one, and the happiness point no longer bites in a round where happiness has stopped mattering. If the last round turns into a routine cull, the fix is to raise the starvation penalty rather than to put the toad's VP back.
 
 Between starvation and the war penalty, happiness has two independent sources of downward pressure. A player who loses the war and starves two toads drops 3 points in a single round.
 
@@ -292,14 +303,14 @@ Two per effect category, a larger and a smaller.
 
 **Resolved — toads from Spawning Pool and Tadpole Pond arrive immediately and can be placed in Phase 3 of the same round.** They must also be fed in Phase 4 of that round.
 
-This makes the toad instants the strongest cards in the deck by a distance. Spawning Pool gives 3 toads in a round where the recruitment phase has already closed — bypassing the 4-toad recruitment cap, the happiness band, and the fly cost all at once. At 10 happiness that's 9 flies of value, plus 6 VP of toads, plus three extra bodies working the same turn you buy it.
+This makes the toad instants the strongest cards in the deck by a distance. Spawning Pool gives 3 toads in a round where the recruitment phase has already closed — bypassing the 4-toad recruitment cap, the happiness band, and the fly cost all at once. At 10 happiness that's 9 flies of value, plus 3 VP of toads, plus three extra bodies working the same turn you buy it.
 
 **On Granary at +8:** this is the largest single resource grant in the deck. At 10 happiness that's nearly three toads' worth of recruitment, or eight rounds of feeding for one toad. It doesn't bypass the 4-toad cap the way Spawning Pool does, and the flies arrive too late in the round to be spent on recruitment until the _following_ round — so it's a slower payoff than the toad instants, but a larger one in raw value. It also makes Granary a live play for the end-game **most flies** 5 VP majority: bought in round 6, it is 8 flies dropped onto the table after everyone else has finished spending.
 
 Two consequences worth tracking in playtesting:
 
 - **A player can exceed 4 new toads per round** by winning a toad instant, which is the only way to break that cap. That's a legitimate strategy, not a loophole, but it means the cap is softer than it reads.
-- **Buying one late is close to pure VP.** A Spawning Pool bought in round 6 is 2 VP for the card plus 6 VP of toads for 3 flies of feeding — 8 VP for a modest gold bid. That may make it the most contested card in the endgame, which is fine, but watch that it doesn't dominate the final auction every single game.
+- **Buying one late is close to pure VP.** A Spawning Pool bought in round 6 is 2 VP for the card plus 3 VP of toads for 3 flies of feeding — 5 VP for a modest gold bid. That may make it the most contested card in the endgame, which is fine, but watch that it doesn't dominate the final auction every single game. The v1.1 drop to 1 VP a toad halved this play's payoff and makes the late Spawning Pool a good card rather than an automatic one.
 
 ### Flat scoring cards — **3 copies each**
 
@@ -369,6 +380,8 @@ So an instant card is a one-off burst of material followed by a permanent 2 VP, 
 
 **Resolved — all materials are public knowledge.** Every player's **toads, flies and gold** are open information at all times, as are their happiness track position and the property cards they own. Nothing about a player's holdings is concealed.
 
+**The auction slate is public a round ahead** (§5, Phase 2). Both the round in progress and the round to come are face-up on the table, and every player sees them at the same moment.
+
 **What is hidden is intention, not position.** Three phases involve secret commitment followed by simultaneous reveal:
 
 - **Phase 1 recruitment** — how many toads you are buying
@@ -391,7 +404,7 @@ Scored at the end of the final round, after that round's feeding phase.
 
 | Source                  | Value                                                                     |
 | ----------------------- | ------------------------------------------------------------------------- |
-| Each surviving toad     | **2 VP**                                                                  |
+| Each surviving toad     | **1 VP**                                                                  |
 | Each war token          | **2–7 VP**, per the round it was won in                                   |
 | Property cards          | **As printed** — 2 VP engine and instant, 5 or 10 VP flat, or conditional |
 | Each gold               | 0 VP                                                                      |
@@ -399,6 +412,12 @@ Scored at the end of the final round, after that round's feeding phase.
 | Each fly                | 0 VP                                                                      |
 
 **Resolved — only toads, war tokens and property cards score per unit.** Gold and happiness both had their per-unit VP removed. Everything else that matters is now a one-off majority award.
+
+**Resolved (v1.1) — a toad is worth 1 VP, down from 2.** At 2 VP a toad, simulation put roughly 43% of all victory points on the board into toad count alone, and a strategy that simply grew its population and ignored the auction won about two thirds of games. Toads were both the engine and the score, which left property cards — 2 VP for an effect you have to bid gold for — looking like a poor substitute for just recruiting another toad.
+
+At 1 VP the toad is still the thing you build, but it pays off through what it produces rather than by sitting on your mat. Property drops from a sideshow to about a third of the points scored, and the auction has to be contested rather than conceded.
+
+Watch two things in play. Toad count is still the **first tie-breaker** (§8), so it retains value beyond its 1 VP. And feeding is now cheaper to walk away from — see the note in §5, Phase 4.
 
 ### End-game majority bonuses
 
@@ -418,7 +437,7 @@ Notes on what this does to the endgame:
 
 **All three resources now behave identically at scoring time** — worthless in bulk, worth exactly 5 VP if you top the table. That's clean and easy to teach, and it means a player can pick one track to win rather than spreading thin across all three.
 
-**The final feeding phase stays tense.** Starving a toad saves 1 fly but costs 2 VP, so it's only worth doing if that single fly swings the 5 VP fly majority. A rare, sharp calculation rather than routine bookkeeping.
+**The final feeding phase stays tense.** Starving a toad saves 1 fly but costs 1 VP, so it is worth doing whenever a couple of flies would swing the 5 VP fly majority. Since v1.1 this is a live calculation rather than a rare one — see §5, Phase 4.
 
 **Happiness is now purely instrumental plus a prize.** It gates recruitment all game and awards 5 VP at the end. That's a much lighter load than v0.6 put on it.
 
@@ -453,7 +472,7 @@ At 6 players, six cards hit the auction each round, so a lot of property enters 
 
 Nothing structural remains. The rules are complete enough to build and play. What is left is small:
 
-**Nothing is open. The design is complete.**
+**Nothing structural is open.** The design is complete; what follows are balance questions being answered in play.
 
 The only item carried forward is a timing detail that follows naturally from the rules as written: the three end-game majorities are checked **after** the final round's feeding, so toads starved in round 6 are already gone when "most flies" is counted.
 
@@ -464,11 +483,20 @@ What remains are playtest questions rather than design decisions:
 - Does the tie-off chicken game cause too many cards to leave the deck at 5–6 players?
 - Does everyone open round 1 with a Rest toad to cross from happiness 10 into the 11–15 band?
 
+Opened by the v1.1 changes:
+
+- **Is 1 VP a toad now too little?** Toads are still the engine, and toad count is still the first tie-breaker, but they no longer pay for themselves at scoring. Watch whether players stop recruiting in the back half.
+- **Does the final round become a routine cull?** Starving a toad now costs 1 VP and a happiness point that no longer matters, against a 5 VP fly majority. If so, raise the starvation penalty rather than restoring the toad's VP.
+- **Does the round-ahead slate make Mine placement too easy?** It was meant to turn a blind bet into a decision. It may instead have turned it into arithmetic.
+- **Is the auction now the whole game?** Property rose from roughly a quarter of all points scored to a third when the toad dropped to 1 VP. That was the intent, but a third is close to the point where a player who loses the gold race cannot recover.
+
 Closed since v0.1: auction format, auction tie resolution, final-round feeding, game-end tie-breaker, flies scoring, happiness band boundaries, 2-player viability, happiness floor, tie handling in all categories, production rates, majority bonus sizes, bonus escalation, war token values, resource use restrictions, turn order, starvation choice, gold and happiness per-unit VP removed, tie-breaker order, starting resources, full card list and deck composition, instant card values, timing of free toads, complete starting setup, war loss penalty, bonus curve shape, Rest bonus escalation, gold engine card rates, scope of the war happiness penalty, war tie handling, deck scaling, gold majority retained, uncapped toad supply, starvation penalty, low-count deck composition, recruitment simultaneity, auction slate reveal, auction mode toggle, bid ceiling, properties per player, fly instant naming, bid ceiling versus overbid penalty, auction eligibility floor, tie-off length, tie-off bidding rule, feeding cost, card holding limit, card permanence and effect timing, full information visibility.
 
 ---
 
 ## 11. Change Log
+
+**v1.1 — 28 Aug 2026** — First tuning pass from the playable build. **Starting gold raised from 5 to 10**, so winning an early card no longer prices you out of the rest of the slate. **The auction slate is now revealed a round in advance** — dealt face-up as soon as the previous round's auction ends — so toads are placed already knowing what is coming up for sale; round 1 still reveals at the start of its own auction. **A surviving toad is worth 1 VP, down from 2**, moving points out of raw population and into property, the war and the majorities.
 
 **v0.17 — 27 Aug 2026** — Deck scales down by one copy of every card at 3 players and below (33 cards). The "most gold" 5 VP end-game majority confirmed to stay. Toad supply uncapped. Each starved toad costs 1 happiness. Gold engine rates held at +3/+5. **Design considered feature-complete.**
 

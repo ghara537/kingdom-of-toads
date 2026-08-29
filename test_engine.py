@@ -745,7 +745,7 @@ def test_scoring_counts_toads_tokens_and_cards():
     p1.cards = ["monument", "grand_monument", "fly_farm"]
     result = engine.score(state)
     b = result["breakdown"]["p1"]
-    assert b["toads"] == 10
+    assert b["toads"] == 5 * config.VP_PER_TOAD
     assert b["war_tokens"] == 7
     assert b["cards"] == 17     # 5 + 10 + 2
     assert b["resources"] == 0  # gold, flies and happiness score nothing per unit
