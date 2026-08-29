@@ -296,6 +296,7 @@ async def public_config():
         "min_bid": config.AUCTION_MIN_BID,
         "eligibility": config.AUCTION_ELIGIBILITY,
         "feed_cost": config.FEED_COST,
+        "vp_per_toad": config.VP_PER_TOAD,
         "production": config.PRODUCTION,
         "min_players": config.MIN_PLAYERS,
         "max_players": config.MAX_PLAYERS,

@@ -1055,9 +1055,20 @@ function scoreboard(v) {
   const wrap = el('div');
   const t = el('table', 'scoreboard');
   const head = el('tr');
-  ['', 'Toads', 'War', 'Cards', 'Cond.', 'Majorities', 'Total'].forEach((h) => {
-    head.appendChild(el('th', null, h));
-  });
+  const columns = [
+    ['', ''],
+    ['Toads', `${S.cfg.vp_per_toad} VP each, after the final feeding`],
+    ['War', 'War tokens, worth the round they were won in'],
+    ['Cards', 'Printed VP on every property you own'],
+    ['Conditional', 'Census, Treasury and Hall of Victories, counted at the end'],
+    ['Majorities', 'Most happiness, most gold, most flies — 5 VP each, ties award nothing'],
+    ['Total', ''],
+  ];
+  for (const [label, why] of columns) {
+    const th = el('th', null, label);
+    if (why) th.title = why;
+    head.appendChild(th);
+  }
   t.appendChild(head);
   for (const pid of s.ranking) {
     const b = s.breakdown[pid];
