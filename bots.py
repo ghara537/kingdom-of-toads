@@ -110,6 +110,7 @@ class Bot:
     def auction(self, view: dict) -> dict:
         auction = view["auction"]
         me = _me(view)
+        min_bid = _rules(view)["auction_min_bid"]
         card_id = auction["slate"][auction["index"]]["card"]
         value = self.value_card(view, card_id)
 
@@ -119,19 +120,18 @@ class Bot:
         budget = min(value, me["gold"], self._auction_budget(view, value))
         if auction["stage"] == engine.STAGE_LIVE:
             floor = max(
-                config.AUCTION_MIN_BID,
-                auction["high_bid"] + config.AUCTION_LIVE_MIN_RAISE,
+                min_bid, auction["high_bid"] + config.AUCTION_LIVE_MIN_RAISE,
             )
             if floor <= budget:
                 return {"type": "bid", "amount": floor}
             return {"type": "pass"}
 
-        if budget < config.AUCTION_MIN_BID:
+        if budget < min_bid:
             return {"type": "bid", "amount": 0}
         # Blind: bid a shade under our valuation, jittered so that bots do not
         # tie every single time (though ties are a real and wanted outcome).
         bid = budget - self.rng.randint(0, 1)
-        return {"type": "bid", "amount": max(config.AUCTION_MIN_BID, bid)}
+        return {"type": "bid", "amount": max(min_bid, bid)}
 
     def _auction_budget(self, view: dict, value: int) -> int:
         """Hold gold back if a card we like more is still to come this round."""
@@ -496,6 +496,11 @@ def play_out(
 
 def _me(view: dict) -> dict:
     return next(p for p in view["players"] if p["id"] == view["you"])
+
+
+def _rules(view: dict) -> dict:
+    """This table's tunable rules, falling back to the global defaults."""
+    return view.get("tuning") or config.tuning_defaults()
 
 
 def _rivals(view: dict, player_id: str) -> list[dict]:

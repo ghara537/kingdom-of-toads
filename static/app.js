@@ -190,6 +190,8 @@ function renderSeatConfig() {
 
 const TUNING_STORE = 'kot:tuning';
 const GROUP_LABEL = {
+  start: 'Starting resources',
+  auction: 'Auction floor',
   scoring: 'End-game scoring',
   fields: 'Fields majority',
   mine: 'Mine majority',
@@ -1052,9 +1054,11 @@ function renderAction(v, me) {
       ? 'Your decision is locked in. Waiting for: ' + v.waiting_on.map((id) => nameOf(v, id)).join(', ')
       : 'Waiting for: ' + v.waiting_on.map((id) => nameOf(v, id)).join(', ')));
     if (done) host.appendChild(el('p', 'hint', describeCommitment(done)));
-    if (v.phase === 'auction' && me.gold < S.cfg.eligibility) {
+    const floorRules = v.tuning || S.cfg.tuning_defaults;
+    if (v.phase === 'auction' && me.gold < floorRules.auction_eligibility) {
       host.appendChild(el('p', 'hint',
-        `You hold ${me.gold} gold — ${S.cfg.eligibility} is needed to bid at all.`));
+        `You hold ${me.gold} gold — ${floorRules.auction_eligibility} is needed `
+        + 'to bid at all.'));
     }
     return;
   }
@@ -1112,7 +1116,7 @@ function renderBid(host, title, v, me) {
 
   if (a.stage === 'live') {
     title.textContent = `Live auction — ${card.name}`;
-    const floor = Math.max(S.cfg.min_bid, a.high_bid + 1);
+    const floor = Math.max((v.tuning || S.cfg.tuning_defaults).auction_min_bid, a.high_bid + 1);
     host.appendChild(el('p', null, a.high_bidder
       ? `Standing bid: ${a.high_bid} gold from ${nameOf(v, a.high_bidder)}.`
       : 'No bids yet.'));
@@ -1133,16 +1137,17 @@ function renderBid(host, title, v, me) {
     return;
   }
 
+  const rules = v.tuning || S.cfg.tuning_defaults;
   const rebid = a.stage === 'rebid';
   title.textContent = rebid ? `Re-bid — ${card.name}` : `Bid — ${card.name}`;
   if (rebid) {
     host.appendChild(el('p', null,
       `Tied at ${a.tied_amount} gold with `
       + a.tied_players.filter((p) => p !== v.you).map((p) => nameOf(v, p)).join(', ')
-      + `. One re-bid only: equal or higher. If you tie again you each pay 3 gold `
-      + `and the card leaves the game.`));
+      + `. One re-bid only: equal or higher. If you tie again you each pay `
+      + `${rules.auction_tie_penalty} gold and the card leaves the game.`));
   }
-  const min = rebid ? a.tied_amount : S.cfg.min_bid;
+  const min = rebid ? a.tied_amount : rules.auction_min_bid;
   const row = el('div', 'form-row');
   const input = el('input');
   input.type = 'number'; input.min = String(min); input.max = String(me.gold);

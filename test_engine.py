@@ -845,6 +845,69 @@ def test_bonus_curves_follow_the_table_values():
     assert state.player("p2").war_tokens == [15]
 
 
+def test_a_table_can_set_its_own_starting_resources():
+    state = make_game(3, tuning={
+        "start_flies": 20, "start_gold": 2, "start_toads": 5, "start_happiness": 16,
+    })
+    for p in state.players:
+        assert (p.flies, p.gold, p.toads, p.happiness) == (20, 2, 5, 16)
+    # Recruitment prices itself off the new happiness band straight away.
+    assert engine.player_view(state, "p1")["players"][0]["recruit_cost"] == 1
+    # And a default table is untouched.
+    assert make_game(2).players[0].gold == config.START_GOLD
+
+
+def test_starting_happiness_cannot_be_set_off_the_track():
+    low = make_game(2, tuning={"start_happiness": -5})
+    high = make_game(2, tuning={"start_happiness": 99})
+    assert low.players[0].happiness == config.HAPPINESS_MIN
+    assert high.players[0].happiness == config.HAPPINESS_MAX
+
+
+def test_a_table_can_set_its_own_auction_floor():
+    state = to_auction(
+        make_game(3, tuning={"auction_min_bid": 6, "auction_eligibility": 6}),
+        ["monument", "monument", "monument"],
+        gold=6,
+    )
+    # 5 clears the old floor of 3 but not this table's.
+    with pytest.raises(engine.InvalidAction) as exc:
+        engine.submit_action(state, "p1", {"type": "bid", "amount": 5})
+    assert "minimum bid is 6" in str(exc.value)
+    state = engine.submit_action(state, "p1", {"type": "bid", "amount": 6})
+    assert state.commitments["p1"]["amount"] == 6
+
+
+def test_eligibility_is_judged_against_the_tables_floor():
+    state = to_auction(
+        make_game(3, tuning={"auction_min_bid": 8, "auction_eligibility": 8}),
+        ["monument", "monument", "monument"],
+        gold=8,
+    )
+    assert sorted(engine.pending_players(state)) == ["p1", "p2", "p3"]
+    state.player("p2").gold = 7          # one short of this table's floor
+    engine._prepare_card(state)
+    assert "p2" not in engine.pending_players(state)
+    assert engine.player_view(state, "p2")["players"][1]["can_bid"] is False
+
+
+def test_a_lowered_floor_never_drives_a_purse_negative():
+    """The tie penalty is payable by design, but the floor is tunable now."""
+    state = to_auction(
+        make_game(2, tuning={"auction_min_bid": 1, "auction_eligibility": 1,
+                             "auction_tie_penalty": 5}),
+        ["monument", "monument"],
+        gold=1,
+    )
+    for _ in range(2):
+        state = commit_all(
+            state,
+            {"p1": {"type": "bid", "amount": 1}, "p2": {"type": "bid", "amount": 1}},
+        )
+    assert "monument" in state.removed
+    assert all(p.gold >= 0 for p in state.players)
+
+
 def test_tuning_is_clamped_and_junk_is_ignored():
     state = make_game(2, tuning={
         "vp_per_toad": 999,          # above the allowed maximum

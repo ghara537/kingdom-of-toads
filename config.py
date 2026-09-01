@@ -392,6 +392,27 @@ def war_token_vp(round_number: int, tuning: dict[str, int] | None = None) -> int
 # ---------------------------------------------------------------------------
 
 TUNING_FIELDS = (
+    ("start_flies", "Starting flies", "Flies every player begins with.",
+     START_FLIES, 0, 60, "start"),
+    ("start_gold", "Starting gold", "Gold every player begins with.",
+     START_GOLD, 0, 60, "start"),
+    ("start_toads", "Starting toads", "Toads every player begins with.",
+     START_TOADS, 0, 20, "start"),
+    ("start_happiness", "Starting happiness",
+     f"Where the track starts, {HAPPINESS_MIN}-{HAPPINESS_MAX}.",
+     START_HAPPINESS, HAPPINESS_MIN, HAPPINESS_MAX, "start"),
+
+    ("auction_min_bid", "Minimum bid", "The smallest bid that is not a pass.",
+     AUCTION_MIN_BID, 1, 30, "auction"),
+    ("auction_eligibility", "Bid eligibility",
+     "Gold you must hold to bid at all. Below this you are out of the auction.",
+     AUCTION_ELIGIBILITY, 0, 30, "auction"),
+    ("auction_tie_penalty", "Tie-off penalty",
+     "Gold each player pays when a re-bid ties again and the card burns. "
+     "Keep this at or below the minimum bid, or a tied player may not be able "
+     "to cover it.",
+     AUCTION_TIE_PENALTY, 0, 30, "auction"),
+
     ("vp_per_toad", "VP per toad", "Each toad alive after the final feeding.",
      VP_PER_TOAD, 0, 20, "scoring"),
     ("vp_most_happiness", "Most happiness", "One-off award. Ties give nobody anything.",

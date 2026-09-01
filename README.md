@@ -116,6 +116,14 @@ plan the filesystem does not survive a spin-down.
 
 Open **Scoring & bonus values** on the new-table screen. You can set:
 
+- **Starting resources** — flies, gold, toads and happiness. Starting happiness
+  is clamped to the 1–20 track, and the recruitment band follows it
+  immediately, so starting at 16 means 1 fly a toad from round 1.
+- **The auction floor** — minimum bid, the eligibility threshold that puts you
+  out of the auction entirely, and the tie-off penalty. Keep the penalty at or
+  below the minimum bid: the design leans on the floor to guarantee a tied
+  player can always pay it. (If you set it higher anyway, the engine takes what
+  they hold rather than pushing a purse negative.)
 - **VP per toad**, and the three end-game majorities (most happiness / gold /
   flies) individually — set one to 0 to switch that award off entirely.
 - The **bonus curve for each area**, as `(base + step x round) / divisor`,

@@ -184,8 +184,19 @@ def new_game(
     deck = card_lib.deck_composition(len(seats))
     random.Random(seed).shuffle(deck)
 
+    tuning = settings.tuning
     state = GameState(
-        players=[PlayerState(id=pid, name=name) for pid, name in seats],
+        players=[
+            PlayerState(
+                id=pid,
+                name=name,
+                flies=tuning["start_flies"],
+                gold=tuning["start_gold"],
+                toads=tuning["start_toads"],
+                happiness=config.clamp_happiness(tuning["start_happiness"]),
+            )
+            for pid, name in seats
+        ],
         settings=settings,
         seed=seed,
         deck=deck,
@@ -216,13 +227,13 @@ def pending_players(state: GameState) -> list[str]:
         return [
             p.id
             for p in state.players
-            if _eligible_to_bid(p) and p.id not in state.commitments
+            if _eligible_to_bid(state, p) and p.id not in state.commitments
         ]
     return []
 
 
-def _eligible_to_bid(player: PlayerState) -> bool:
-    return player.gold >= config.AUCTION_ELIGIBILITY
+def _eligible_to_bid(state: GameState, player: PlayerState) -> bool:
+    return player.gold >= state.settings.tuning["auction_eligibility"]
 
 
 def seat_order(state: GameState) -> list[str]:
@@ -330,7 +341,10 @@ def _validate_auction_action(
         if kind != "bid":
             raise InvalidAction("expected a bid or a pass")
         amount = _as_int(action.get("amount"), "amount")
-        floor = max(config.AUCTION_MIN_BID, auction.high_bid + config.AUCTION_LIVE_MIN_RAISE)
+        floor = max(
+            state.settings.tuning["auction_min_bid"],
+            auction.high_bid + config.AUCTION_LIVE_MIN_RAISE,
+        )
         if amount < floor:
             raise InvalidAction(f"a raise must be at least {floor} gold")
         if amount > player.gold:
@@ -352,8 +366,9 @@ def _validate_auction_action(
 
     if amount == 0:
         return  # a pass
-    if amount < config.AUCTION_MIN_BID:
-        raise InvalidAction(f"the minimum bid is {config.AUCTION_MIN_BID} gold")
+    minimum = state.settings.tuning["auction_min_bid"]
+    if amount < minimum:
+        raise InvalidAction(f"the minimum bid is {minimum} gold")
 
 
 def _as_int(value: Any, label: str) -> int:
@@ -509,7 +524,7 @@ def _prepare_card(state: GameState) -> None:
     auction.passed = []
     auction.turn = None
 
-    eligible = [p.id for p in state.players if _eligible_to_bid(p)]
+    eligible = [p.id for p in state.players if _eligible_to_bid(state, p)]
     if not eligible:
         _finish_card(state, status=BURNED_UNSOLD)
         return
@@ -569,8 +584,12 @@ def _resolve_auction_step(state: GameState) -> None:
         return
 
     # Tied again: everyone pays the penalty and the card leaves the game.
+    penalty = state.settings.tuning["auction_tie_penalty"]
     for pid in leaders:
-        state.player(pid).gold -= config.AUCTION_TIE_PENALTY
+        player = state.player(pid)
+        # The eligibility floor is meant to guarantee this is affordable, but
+        # the floor is tunable now, so never let a purse go negative.
+        player.gold -= min(penalty, player.gold)
     names = ", ".join(_name(state, pid) for pid in leaders)
     _log(
         state,
@@ -579,7 +598,7 @@ def _resolve_auction_step(state: GameState) -> None:
         amount=top,
         text=(
             f"{names} tied again at {top} — each pays "
-            f"{config.AUCTION_TIE_PENALTY} gold and {_card_name(state)} "
+            f"{penalty} gold and {_card_name(state)} "
             "is removed from the game."
         ),
     )
@@ -619,13 +638,16 @@ def _next_live_actor(state: GameState) -> str | None:
     active = [
         p.id
         for p in state.players
-        if p.id not in auction.passed and _eligible_to_bid(p)
+        if p.id not in auction.passed and _eligible_to_bid(state, p)
     ]
     contenders = [pid for pid in active if pid != auction.high_bidder]
     if not contenders:
         return None
     # A player can only raise if they can actually afford one.
-    floor = max(config.AUCTION_MIN_BID, auction.high_bid + config.AUCTION_LIVE_MIN_RAISE)
+    floor = max(
+        state.settings.tuning["auction_min_bid"],
+        auction.high_bid + config.AUCTION_LIVE_MIN_RAISE,
+    )
     affordable = [pid for pid in contenders if state.player(pid).gold >= floor]
     if not affordable:
         return None
@@ -1039,7 +1061,7 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
                 "last_placement": dict(p.last_placement),
                 "committed": p.id in state.commitments,
                 "waiting_on": p.id in waiting,
-                "can_bid": _eligible_to_bid(p),
+                "can_bid": _eligible_to_bid(state, p),
             }
         )
 
