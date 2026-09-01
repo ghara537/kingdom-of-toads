@@ -365,16 +365,99 @@ def recruit_band(happiness: int) -> tuple[int, int, int]:
     raise ValueError(f"happiness {happiness} falls outside every cost band")
 
 
-def majority_bonus(area: str, round_number: int) -> tuple[str, int]:
+def majority_bonus(
+    area: str, round_number: int, tuning: dict[str, int] | None = None
+) -> tuple[str, int]:
     """(resource, amount) awarded for the majority in `area` this round."""
-    curve = MAJORITY_BONUS_CURVES[area]
-    raw = curve["base"] + curve["per_round"] * round_number
-    return curve["resource"], math.ceil(raw / curve["divisor"])
+    t = tuning or TUNING_DEFAULTS
+    raw = t[f"{area}_bonus_base"] + t[f"{area}_bonus_per_round"] * round_number
+    divisor = max(1, t[f"{area}_bonus_divisor"])
+    return MAJORITY_BONUS_CURVES[area]["resource"], math.ceil(raw / divisor)
 
 
-def war_token_vp(round_number: int) -> int:
+def war_token_vp(round_number: int, tuning: dict[str, int] | None = None) -> int:
     """VP value of the war token won in `round_number`."""
-    return WAR_TOKEN_VP_BASE + WAR_TOKEN_VP_PER_ROUND * round_number
+    t = tuning or TUNING_DEFAULTS
+    return t["war_token_base"] + t["war_token_per_round"] * round_number
+
+
+# ---------------------------------------------------------------------------
+# Per-table tuning
+#
+# These are the balance numbers a table can override at creation, so that two
+# tables can run different values and a saved game keeps the values it was
+# actually played with. Everything else in this file is a global default.
+#
+# Each field is (key, label, help, default, min, max, group).
+# ---------------------------------------------------------------------------
+
+TUNING_FIELDS = (
+    ("vp_per_toad", "VP per toad", "Each toad alive after the final feeding.",
+     VP_PER_TOAD, 0, 20, "scoring"),
+    ("vp_most_happiness", "Most happiness", "One-off award. Ties give nobody anything.",
+     END_MAJORITIES[HAPPINESS], 0, 50, "scoring"),
+    ("vp_most_gold", "Most gold", "One-off award. Ties give nobody anything.",
+     END_MAJORITIES[GOLD], 0, 50, "scoring"),
+    ("vp_most_flies", "Most flies", "One-off award. Ties give nobody anything.",
+     END_MAJORITIES[FLIES], 0, 50, "scoring"),
+
+    ("fields_bonus_base", "Fields base", "Bonus = (base + step x round) / divisor, rounded up.",
+     MAJORITY_BONUS_CURVES[FIELDS]["base"], 0, 20, "fields"),
+    ("fields_bonus_per_round", "Fields step", "How much the bonus grows each round.",
+     MAJORITY_BONUS_CURVES[FIELDS]["per_round"], 0, 10, "fields"),
+    ("fields_bonus_divisor", "Fields divisor", "Divide by this to slow the curve down.",
+     MAJORITY_BONUS_CURVES[FIELDS]["divisor"], 1, 10, "fields"),
+
+    ("mine_bonus_base", "Mine base", "Bonus = (base + step x round) / divisor, rounded up.",
+     MAJORITY_BONUS_CURVES[MINE]["base"], 0, 20, "mine"),
+    ("mine_bonus_per_round", "Mine step", "How much the bonus grows each round.",
+     MAJORITY_BONUS_CURVES[MINE]["per_round"], 0, 10, "mine"),
+    ("mine_bonus_divisor", "Mine divisor", "Divide by this to slow the curve down.",
+     MAJORITY_BONUS_CURVES[MINE]["divisor"], 1, 10, "mine"),
+
+    ("rest_bonus_base", "Rest base", "Bonus = (base + step x round) / divisor, rounded up.",
+     MAJORITY_BONUS_CURVES[REST]["base"], 0, 20, "rest"),
+    ("rest_bonus_per_round", "Rest step", "How much the bonus grows each round.",
+     MAJORITY_BONUS_CURVES[REST]["per_round"], 0, 10, "rest"),
+    ("rest_bonus_divisor", "Rest divisor", "Divide by this to slow the curve down.",
+     MAJORITY_BONUS_CURVES[REST]["divisor"], 1, 10, "rest"),
+
+    ("war_token_base", "War token base", "War token VP = base + step x round.",
+     WAR_TOKEN_VP_BASE, 0, 20, "war"),
+    ("war_token_per_round", "War token step", "How much the token grows each round.",
+     WAR_TOKEN_VP_PER_ROUND, 0, 10, "war"),
+)
+
+TUNING_DEFAULTS: dict[str, int] = {f[0]: f[3] for f in TUNING_FIELDS}
+TUNING_BOUNDS: dict[str, tuple[int, int]] = {f[0]: (f[4], f[5]) for f in TUNING_FIELDS}
+
+
+def tuning_defaults() -> dict[str, int]:
+    return dict(TUNING_DEFAULTS)
+
+
+def clean_tuning(raw: dict | None) -> dict[str, int]:
+    """A complete, in-range tuning dict. Unknown keys and junk are dropped."""
+    tuning = tuning_defaults()
+    for key, value in (raw or {}).items():
+        if key not in TUNING_DEFAULTS:
+            continue
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            continue
+        low, high = TUNING_BOUNDS[key]
+        tuning[key] = max(low, min(high, number))
+    return tuning
+
+
+def end_majorities(tuning: dict[str, int] | None = None) -> dict[str, int]:
+    t = tuning or TUNING_DEFAULTS
+    return {
+        HAPPINESS: t["vp_most_happiness"],
+        GOLD: t["vp_most_gold"],
+        FLIES: t["vp_most_flies"],
+    }
 
 
 def clamp_happiness(value: int) -> int:

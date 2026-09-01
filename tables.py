@@ -124,6 +124,8 @@ class Table:
     seats: list[Seat]
     rounds: int = config.ROUNDS
     auction_mode: str = config.AUCTION_MODE_DEFAULT
+    # Per-table scoring and bonus values; see config.TUNING_FIELDS.
+    tuning: dict[str, int] = field(default_factory=config.tuning_defaults)
     status: str = LOBBY
     state: engine.GameState | None = None
     seed: int | None = None
@@ -192,6 +194,7 @@ class Table:
         auction_mode: str | None = None,
         seat_kinds: list[dict] | None = None,
         timeout_seconds: int | None = None,
+        tuning: dict | None = None,
     ) -> None:
         if self.status != LOBBY:
             raise TableError("settings are locked once the game starts")
@@ -199,6 +202,8 @@ class Table:
             self.rounds = max(1, min(20, int(rounds)))
         if timeout_seconds is not None:
             self.timeout_seconds = max(10, min(3600, int(timeout_seconds)))
+        if tuning is not None:
+            self.tuning = config.clean_tuning(tuning)
         if auction_mode is not None:
             if auction_mode not in (config.AUCTION_MODE_BLIND, config.AUCTION_MODE_LIVE):
                 raise TableError("unknown auction mode")
@@ -229,7 +234,11 @@ class Table:
         self.seed = self.seed if self.seed is not None else random.randrange(2**31)
         self.state = engine.new_game(
             [(s.player_id, s.name) for s in self.seats],
-            engine.Settings(rounds=self.rounds, auction_mode=self.auction_mode),
+            engine.Settings(
+                rounds=self.rounds,
+                auction_mode=self.auction_mode,
+                tuning=dict(self.tuning),
+            ),
             seed=self.seed,
         )
         self.status = IN_PROGRESS
@@ -540,6 +549,7 @@ class Table:
             "status": self.status,
             "seed": self.seed,
             "timeout_seconds": self.timeout_seconds,
+            "tuning": dict(self.tuning),
             "deadline": self.deadline,
             "phase_key": self.phase_key,
             "paused": self.paused,
@@ -564,6 +574,7 @@ class Table:
             state=engine.deserialize(state) if state else None,
             seed=data.get("seed"),
             timeout_seconds=data.get("timeout_seconds", config.PHASE_TIMEOUT_SECONDS),
+            tuning=config.clean_tuning(data.get("tuning")),
             deadline=data.get("deadline"),
             phase_key=data.get("phase_key"),
             paused=data.get("paused", False),
@@ -591,6 +602,7 @@ class Table:
             "is_host": self.is_host(token),
             "strategies": sorted(bots.STRATEGIES),
             "timeout_seconds": self.timeout_seconds,
+            "tuning": dict(self.tuning),
             # Seconds rather than a timestamp, so the client counts down from
             # when the message arrived and clock skew never matters.
             "seconds_left": self.seconds_left(),
@@ -658,6 +670,7 @@ class TableStore:
         seat_kinds: list[dict] | None = None,
         seed: int | None = None,
         timeout_seconds: int | None = None,
+        tuning: dict | None = None,
     ) -> tuple[Table, Seat]:
         if not config.MIN_PLAYERS <= player_count <= config.MAX_PLAYERS:
             raise TableError(
@@ -683,6 +696,7 @@ class TableStore:
             auction_mode=auction_mode,
             seat_kinds=seat_kinds,
             timeout_seconds=timeout_seconds,
+            tuning=tuning,
         )
         host_seat = table.join(host_name, seat_index=0)
         return table, host_seat

@@ -116,8 +116,11 @@ async function boot() {
   cardTipInit();
   setInterval(tickTimer, 1000);
   renderSeatConfig();
+  renderTuningForm();
 
   $('player-count').addEventListener('change', renderSeatConfig);
+  $('rounds').addEventListener('input', renderTuningPreview);
+  $('tuning-reset').addEventListener('click', resetTuning);
   $('create-table').addEventListener('click', createTable);
   $('join-table').addEventListener('click', joinTable);
   $('start-game').addEventListener('click', startGame);
@@ -174,6 +177,112 @@ function renderSeatConfig() {
   }
 }
 
+/* ------------------------------------------------------------ tuning form
+ *
+ * The balance numbers are per-table, not global: they are stored with the game
+ * so a finished table keeps the values it was played with, and two tables can
+ * run different ones at once. The form builds itself from /api/config, so
+ * adding a field to config.TUNING_FIELDS is all it takes to expose it here.
+ *
+ * Values are also remembered in localStorage, so the next table you create
+ * starts from the numbers you last used rather than the defaults.
+ */
+
+const TUNING_STORE = 'kot:tuning';
+const GROUP_LABEL = {
+  scoring: 'End-game scoring',
+  fields: 'Fields majority',
+  mine: 'Mine majority',
+  rest: 'Rest majority',
+  war: 'War token',
+};
+
+function savedTuning() {
+  try {
+    return JSON.parse(localStorage.getItem(TUNING_STORE)) || {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function renderTuningForm() {
+  const host = $('tuning-groups');
+  host.innerHTML = '';
+  const saved = savedTuning();
+  const groups = [];
+  for (const f of S.cfg.tuning_fields) {
+    if (!groups.includes(f.group)) groups.push(f.group);
+  }
+  for (const group of groups) {
+    const box = el('div', 'tuning-group');
+    box.appendChild(el('h4', null, GROUP_LABEL[group] || group));
+    const row = el('div', 'form-row');
+    for (const f of S.cfg.tuning_fields.filter((x) => x.group === group)) {
+      const label = el('label', null, f.label);
+      label.title = f.help;
+      const input = el('input');
+      input.type = 'number';
+      input.min = String(f.min);
+      input.max = String(f.max);
+      input.dataset.tuning = f.key;
+      input.value = String(saved[f.key] !== undefined ? saved[f.key] : f.default);
+      input.addEventListener('input', renderTuningPreview);
+      label.appendChild(input);
+      row.appendChild(label);
+    }
+    box.appendChild(row);
+    host.appendChild(box);
+  }
+  renderTuningPreview();
+}
+
+function tuningValues() {
+  const out = {};
+  document.querySelectorAll('[data-tuning]').forEach((input) => {
+    const n = parseInt(input.value, 10);
+    if (!Number.isNaN(n)) out[input.dataset.tuning] = n;
+  });
+  return out;
+}
+
+/* The curves are (base + step x round) / divisor rounded up, which is hard to
+ * hold in your head. Show what the numbers actually produce, round by round. */
+function renderTuningPreview() {
+  const t = tuningValues();
+  const rounds = Math.max(1, Math.min(10, parseInt($('rounds').value, 10) || 6));
+  const host = $('tuning-preview');
+  host.innerHTML = '';
+  const table = el('table', 'scoreboard');
+  const head = el('tr');
+  ['Round', 'Fields', 'Mine', 'Rest', 'War token'].forEach((h) => {
+    head.appendChild(el('th', null, h));
+  });
+  table.appendChild(head);
+  const curve = (area, r) => Math.ceil(
+    (t[`${area}_bonus_base`] + t[`${area}_bonus_per_round`] * r)
+    / Math.max(1, t[`${area}_bonus_divisor`]));
+  for (let r = 1; r <= rounds; r++) {
+    const tr = el('tr');
+    tr.appendChild(el('td', null, 'R' + r));
+    tr.appendChild(el('td', null, '+' + curve('fields', r)));
+    tr.appendChild(el('td', null, '+' + curve('mine', r)));
+    tr.appendChild(el('td', null, '+' + curve('rest', r)));
+    tr.appendChild(el('td', null, (t.war_token_base + t.war_token_per_round * r) + ' VP'));
+    table.appendChild(tr);
+  }
+  host.appendChild(el('h4', null, 'What that produces'));
+  host.appendChild(table);
+  host.appendChild(el('p', 'hint',
+    `A toad scores ${t.vp_per_toad} VP. End-game majorities: `
+    + `${t.vp_most_happiness} happiness / ${t.vp_most_gold} gold / `
+    + `${t.vp_most_flies} flies.`));
+}
+
+function resetTuning() {
+  localStorage.removeItem(TUNING_STORE);
+  renderTuningForm();
+}
+
 function seatSpecs() {
   const specs = [{ index: 0, kind: 'human' }];
   document.querySelectorAll('.seat-kind').forEach((sel) => {
@@ -193,8 +302,10 @@ async function createTable() {
     rounds: parseInt($('rounds').value, 10),
     auction_mode: $('auction-mode').value,
     timeout_seconds: parseInt($('timer').value, 10),
+    tuning: tuningValues(),
     seats: seatSpecs(),
   };
+  localStorage.setItem(TUNING_STORE, JSON.stringify(body.tuning));
   const res = await fetch('/api/tables', {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -458,9 +569,12 @@ function renderLobby() {
     tr.appendChild(st);
     body.appendChild(tr);
   }
+  const tune = t.tuning || {};
   $('lobby-settings').textContent =
     `${t.rounds} rounds · ${t.auction_mode} auction · ${t.seats.length} players`
-    + ` · ${t.timeout_seconds}s per phase`;
+    + ` · ${t.timeout_seconds}s per phase`
+    + ` · ${tune.vp_per_toad} VP a toad`
+    + ` · majorities ${tune.vp_most_happiness}/${tune.vp_most_gold}/${tune.vp_most_flies}`;
   // The socket only carries our seat token, so the server cannot tell from it
   // whether we are the host. Holding the host token locally is the signal; the
   // server still checks it for real when /start is called.

@@ -59,6 +59,7 @@ class GameResult:
     prices: list[int] = field(default_factory=list)
     cards_won: Counter = field(default_factory=Counter)
     starved: int = 0
+    tuning: dict[str, int] = field(default_factory=dict)
     log: list[dict] = field(default_factory=list)
 
 
@@ -69,17 +70,19 @@ def play_game(
     mode: str,
     seed: int,
     keep_log: bool = False,
+    tuning: dict[str, int] | None = None,
 ) -> GameResult:
     """Play one bot-only game and pull the numbers out of the finished state."""
     seats = {f"p{i + 1}": strategies[i] for i in range(players)}
     state = engine.new_game(
         [(pid, f"{seats[pid]}-{pid}") for pid in seats],
-        engine.Settings(rounds=rounds, auction_mode=mode),
+        engine.Settings(rounds=rounds, auction_mode=mode, tuning=tuning or {}),
         seed=seed,
     )
     rng = random.Random(seed)
     result = GameResult(
-        seed=seed, players=players, rounds=rounds, mode=mode, seats=dict(seats)
+        seed=seed, players=players, rounds=rounds, mode=mode,
+        seats=dict(seats), tuning=dict(state.settings.tuning),
     )
 
     round_now = state.round
@@ -150,6 +153,7 @@ def run(
     matchup: list[str] | None,
     seed: int,
     keep_log: bool = False,
+    tuning: dict[str, int] | None = None,
 ) -> list[GameResult]:
     results = []
     for players in player_counts:
@@ -161,6 +165,7 @@ def run(
                 play_game(
                     order, players, rounds, mode, seed + game,
                     keep_log=keep_log and game == 0,
+                    tuning=tuning,
                 )
             )
     return results
@@ -353,7 +358,14 @@ def full_report(results: list[GameResult], args: argparse.Namespace) -> str:
         f"{'/'.join(str(c) for c in counts)} players, "
         f"{args.mode} auction, {args.rounds} rounds"
     )
-    parts = [header, "=" * len(header), ""]
+    changed = {
+        k: v for k, v in (results[0].tuning or {}).items()
+        if v != config.TUNING_DEFAULTS[k]
+    }
+    parts = [header, "=" * len(header)]
+    if changed:
+        parts.append("tuned: " + ", ".join(f"{k}={v}" for k, v in sorted(changed.items())))
+    parts.append("")
     for section in (
         report_win_rates(results),
         report_vp_sources(results),
@@ -434,6 +446,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--matchup",
                         help="comma-separated strategies to seat, e.g. farmer,miner")
     parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument(
+        "--tune", action="append", default=[], metavar="KEY=VALUE",
+        help="override a balance value, e.g. --tune vp_per_toad=2. Repeatable.",
+    )
     parser.add_argument("--csv", help="write one row per seat per game")
     parser.add_argument("--json", dest="json_path", help="write the full results")
     parser.add_argument("--sample-log", action="store_true",
@@ -457,6 +473,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"unknown strategies: {', '.join(unknown)}", file=sys.stderr)
             return 2
 
+    tuning: dict[str, int] = {}
+    for item in args.tune:
+        key, _, value = item.partition("=")
+        if key not in config.TUNING_DEFAULTS or not value.lstrip("-").isdigit():
+            print(f"bad --tune {item!r}; known keys: "
+                  f"{', '.join(sorted(config.TUNING_DEFAULTS))}", file=sys.stderr)
+            return 2
+        tuning[key] = int(value)
+    tuning = config.clean_tuning(tuning)
+
     results = run(
         games=args.games,
         player_counts=counts,
@@ -465,6 +491,7 @@ def main(argv: list[str] | None = None) -> int:
         matchup=matchup,
         seed=args.seed,
         keep_log=args.sample_log,
+        tuning=tuning,
     )
 
     if args.sample_log:

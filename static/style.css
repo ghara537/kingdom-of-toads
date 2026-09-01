@@ -209,6 +209,18 @@ table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-tr
 .scoreboard th:first-child, .scoreboard td:first-child { text-align: left; font-family: inherit; }
 .scoreboard tr.winner { background: #eef7f0; font-weight: 700; }
 
+/* ------------------------------------------------------------ tuning form */
+
+#tuning-panel { border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+#tuning-panel summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+#tuning-panel[open] summary { margin-bottom: 8px; }
+#tuning-panel h4 { margin: 12px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+#tuning-panel input[type=number] { width: 70px; }
+.tuning-group .form-row { margin-bottom: 4px; }
+#tuning-preview { margin-top: 12px; max-width: 460px; }
+#tuning-preview table { width: 100%; }
+#tuning-preview td, #tuning-preview th { padding: 3px 8px; }
+
 /* ---------------------------------------------------------- card tooltip */
 
 #card-tip {

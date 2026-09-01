@@ -76,6 +76,13 @@ class InvalidAction(Exception):
 class Settings:
     rounds: int = config.ROUNDS
     auction_mode: str = config.AUCTION_MODE_DEFAULT
+    # Per-table balance numbers (scoring and bonus curves). Stored with the
+    # game so a saved table keeps the values it was actually played with, and
+    # two tables can run different ones side by side.
+    tuning: dict[str, int] = field(default_factory=config.tuning_defaults)
+
+    def __post_init__(self) -> None:
+        self.tuning = config.clean_tuning(self.tuning)
 
 
 @dataclass
@@ -732,6 +739,7 @@ def _begin_placement(state: GameState) -> None:
 
 def _resolve_placement(state: GameState) -> None:
     rnd = state.round
+    tuning = state.settings.tuning
     placements = {
         p.id: _normalise_placement(state.commitments[p.id]["placement"])
         for p in state.players
@@ -775,7 +783,7 @@ def _resolve_placement(state: GameState) -> None:
     for area in config.MAJORITY_AREAS:
         counts = {pid: placements[pid].get(area, 0) for pid in placements}
         winner = _unique_leader(counts, minimum=config.MAJORITY_MIN_TOADS)
-        resource, amount = config.majority_bonus(area, rnd)
+        resource, amount = config.majority_bonus(area, rnd, tuning)
         if winner is None:
             _log(
                 state,
@@ -814,7 +822,7 @@ def _resolve_placement(state: GameState) -> None:
             text="The war is tied — no token, and nobody loses happiness.",
         )
     else:
-        vp = config.war_token_vp(rnd)
+        vp = config.war_token_vp(rnd, tuning)
         state.player(war_winner).war_tokens.append(vp)
         # (f) every other player pays, but only because there was a winner
         for player in state.players:
@@ -917,6 +925,7 @@ def _resolve_feed(state: GameState) -> None:
 
 def score(state: GameState) -> dict[str, Any]:
     """Final scoring. Safe to call at any time for a projected score."""
+    tuning = state.settings.tuning
     breakdown: dict[str, dict[str, Any]] = {}
 
     for player in state.players:
@@ -941,7 +950,7 @@ def score(state: GameState) -> dict[str, Any]:
                     conditional_detail.get(card_id, 0) + earned
                 )
         breakdown[player.id] = {
-            "toads": player.toads * config.VP_PER_TOAD,
+            "toads": player.toads * tuning["vp_per_toad"],
             "war_tokens": sum(player.war_tokens),
             "cards": flat,
             "conditional": conditional,
@@ -957,7 +966,7 @@ def score(state: GameState) -> dict[str, Any]:
 
     # End-game majorities: unique leader only, ties award nothing.
     majority_results: dict[str, str | None] = {}
-    for metric, vp in config.END_MAJORITIES.items():
+    for metric, vp in config.end_majorities(tuning).items():
         values = {p.id: getattr(p, metric) for p in state.players}
         winner = _unique_leader(values, minimum=1)
         majority_results[metric] = winner
@@ -1011,6 +1020,7 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
     """
     waiting = pending_players(state)
     rnd = state.round
+    tuning = state.settings.tuning
 
     players = []
     for p in state.players:
@@ -1048,10 +1058,17 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
         "upcoming": list(state.upcoming),
         "removed": list(state.removed),
         "bonuses": {
-            "fields": config.majority_bonus(config.FIELDS, rnd)[1],
-            "mine": config.majority_bonus(config.MINE, rnd)[1],
-            "rest": config.majority_bonus(config.REST, rnd)[1],
-            "war_token_vp": config.war_token_vp(rnd),
+            "fields": config.majority_bonus(config.FIELDS, rnd, tuning)[1],
+            "mine": config.majority_bonus(config.MINE, rnd, tuning)[1],
+            "rest": config.majority_bonus(config.REST, rnd, tuning)[1],
+            "war_token_vp": config.war_token_vp(rnd, tuning),
+        },
+        # This table's balance numbers, so the UI can label the scoreboard and
+        # bots can weigh a toad against a majority without reading globals.
+        "tuning": dict(tuning),
+        "scoring": {
+            "vp_per_toad": tuning["vp_per_toad"],
+            "majorities": config.end_majorities(tuning),
         },
         "log": list(state.log),
         "projected_scores": score(state)["totals"],

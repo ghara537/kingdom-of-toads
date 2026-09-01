@@ -798,6 +798,94 @@ def test_tiebreakers_are_vp_then_toads_then_happiness():
 
 
 # ---------------------------------------------------------------------------
+# Per-table tuning
+# ---------------------------------------------------------------------------
+
+
+def test_a_table_scores_toads_at_its_own_rate():
+    state = make_game(2, tuning={"vp_per_toad": 5})
+    state.player("p1").toads = 4
+    assert engine.score(state)["breakdown"]["p1"]["toads"] == 20
+    # And the default table is untouched by it.
+    plain = make_game(2)
+    plain.player("p1").toads = 4
+    assert engine.score(plain)["breakdown"]["p1"]["toads"] == 4 * config.VP_PER_TOAD
+
+
+def test_end_game_majorities_use_the_table_values():
+    state = make_game(3, tuning={
+        "vp_most_gold": 12, "vp_most_flies": 0, "vp_most_happiness": 3,
+    })
+    state.player("p1").gold = 40
+    state.player("p2").flies = 40
+    state.player("p3").happiness = 19
+    breakdown = engine.score(state)["breakdown"]
+    assert breakdown["p1"]["majorities"] == 12
+    assert breakdown["p2"]["majorities"] == 0    # the award was tuned away
+    assert breakdown["p3"]["majorities"] == 3
+
+
+def test_bonus_curves_follow_the_table_values():
+    state = make_game(2, tuning={
+        "fields_bonus_base": 10, "fields_bonus_per_round": 0,
+        "rest_bonus_base": 0, "rest_bonus_per_round": 1, "rest_bonus_divisor": 1,
+        "war_token_base": 0, "war_token_per_round": 5,
+    })
+    state.round = 3
+    view = engine.player_view(state, "p1")
+    assert view["bonuses"]["fields"] == 10   # flat, not escalating
+    assert view["bonuses"]["rest"] == 3      # now full speed, not half
+    assert view["bonuses"]["war_token_vp"] == 15
+
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 2
+    state = commit_all(state, {"p1": place(fields=2), "p2": place(military=2)})
+    assert state.player("p1").flies == config.START_FLIES + 4 + 10
+    assert state.player("p2").war_tokens == [15]
+
+
+def test_tuning_is_clamped_and_junk_is_ignored():
+    state = make_game(2, tuning={
+        "vp_per_toad": 999,          # above the allowed maximum
+        "vp_most_gold": -5,          # below the minimum
+        "rest_bonus_divisor": 0,     # would divide by zero
+        "wingspan": 7,               # not a real setting
+        "vp_most_flies": "eight",    # not a number
+    })
+    t = state.settings.tuning
+    assert t["vp_per_toad"] == config.TUNING_BOUNDS["vp_per_toad"][1]
+    assert t["vp_most_gold"] == config.TUNING_BOUNDS["vp_most_gold"][0]
+    assert t["rest_bonus_divisor"] >= 1
+    assert "wingspan" not in t
+    assert t["vp_most_flies"] == config.TUNING_DEFAULTS["vp_most_flies"]
+    assert set(t) == set(config.TUNING_DEFAULTS)
+
+
+def test_tuning_survives_a_serialise_reload():
+    state = make_game(2, tuning={"vp_per_toad": 4, "war_token_base": 9})
+    restored = engine.deserialize(json.loads(json.dumps(engine.serialize(state))))
+    assert restored.settings.tuning == state.settings.tuning
+    assert restored.settings.tuning["vp_per_toad"] == 4
+
+
+def test_an_older_save_without_tuning_still_loads():
+    state = make_game(2)
+    blob = engine.serialize(state)
+    del blob["settings"]["tuning"]
+    restored = engine.deserialize(blob)
+    assert restored.settings.tuning == config.tuning_defaults()
+
+
+def test_the_view_publishes_the_tables_scoring_values():
+    state = make_game(2, tuning={"vp_per_toad": 3, "vp_most_flies": 7})
+    view = engine.player_view(state, "p1")
+    assert view["scoring"]["vp_per_toad"] == 3
+    assert view["scoring"]["majorities"][config.FLIES] == 7
+    assert view["tuning"]["vp_per_toad"] == 3
+
+
+# ---------------------------------------------------------------------------
 # Views — hidden information
 # ---------------------------------------------------------------------------
 

@@ -291,6 +291,51 @@ def test_the_app_and_its_assets_are_served(client):
     assert client.get("/healthz").json()["ok"] is True
 
 
+def test_a_table_can_be_created_with_its_own_scoring_values(client):
+    made = create(client, players=2, tuning={"vp_per_toad": 4, "vp_most_gold": 11})
+    code = made["code"]
+    lobby = client.get(f"/api/tables/{code}").json()["table"]
+    assert lobby["tuning"]["vp_per_toad"] == 4
+    assert lobby["tuning"]["vp_most_gold"] == 11
+    # Untouched fields keep their defaults.
+    assert lobby["tuning"]["war_token_base"] == config.TUNING_DEFAULTS["war_token_base"]
+
+    client.post(f"/api/tables/{code}/start?token={made['host_token']}")
+    view = client.get(f"/api/tables/{code}?token={made['token']}").json()["view"]
+    assert view["scoring"]["vp_per_toad"] == 4
+
+
+def test_a_second_table_is_unaffected_by_the_first(client):
+    tuned = create(client, players=2, tuning={"vp_per_toad": 9})
+    plain = create(client, players=2)
+    assert client.get(f"/api/tables/{tuned['code']}").json()["table"]["tuning"]["vp_per_toad"] == 9
+    assert (
+        client.get(f"/api/tables/{plain['code']}").json()["table"]["tuning"]["vp_per_toad"]
+        == config.VP_PER_TOAD
+    )
+
+
+def test_scoring_values_lock_when_the_game_starts(client):
+    made = create(client, players=2, tuning={"vp_per_toad": 3})
+    client.post(f"/api/tables/{made['code']}/start?token={made['host_token']}")
+    res = client.post(
+        f"/api/tables/{made['code']}/configure?token={made['host_token']}",
+        json={"player_count": 2, "seats": [], "tuning": {"vp_per_toad": 20}},
+    )
+    assert "locked" in res.json()["error"]
+
+
+def test_the_tuning_form_is_published_for_the_ui(client):
+    cfg = client.get("/api/config").json()
+    keys = {f["key"] for f in cfg["tuning_fields"]}
+    assert keys == set(cfg["tuning_defaults"])
+    assert "vp_per_toad" in keys
+    assert {"vp_most_happiness", "vp_most_gold", "vp_most_flies"} <= keys
+    for field in cfg["tuning_fields"]:
+        assert field["min"] <= field["default"] <= field["max"]
+        assert field["label"] and field["help"] and field["group"]
+
+
 def test_keepalive_reports_uptime_so_a_cold_start_is_visible(client):
     first = client.get("/api/keepalive").json()
     assert first["ok"] is True

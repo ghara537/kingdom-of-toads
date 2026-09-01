@@ -279,12 +279,18 @@ class Bot:
             for p in view["players"]
             if p["id"] != self.player_id
         ]
+        # This table's numbers, not the global defaults: the trade only makes
+        # sense against the VP a toad and the fly majority are actually worth.
+        scoring = view.get("scoring") or {
+            "vp_per_toad": config.VP_PER_TOAD,
+            "majorities": config.end_majorities(),
+        }
         best, best_score = affordable, -1
         for keep in range(max(0, affordable - 2), affordable + 1):
             flies_left = me["flies"] - keep * config.FEED_COST
-            score = keep * config.VP_PER_TOAD
+            score = keep * scoring["vp_per_toad"]
             if rivals and all(flies_left > r for r in rivals):
-                score += config.END_MAJORITIES[config.FLIES]
+                score += scoring["majorities"][config.FLIES]
             if score > best_score:
                 best, best_score = keep, score
         return best

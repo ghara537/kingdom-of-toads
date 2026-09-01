@@ -154,6 +154,7 @@ class CreateTable(BaseModel):
     rounds: int = config.ROUNDS
     auction_mode: str = config.AUCTION_MODE_DEFAULT
     timeout_seconds: int = config.PHASE_TIMEOUT_SECONDS
+    tuning: dict[str, int] = Field(default_factory=dict)
     seats: list[SeatSpec] = Field(default_factory=list)
     seed: int | None = None
 
@@ -184,6 +185,7 @@ async def create_table(body: CreateTable):
             seat_kinds=[s.model_dump() for s in body.seats],
             seed=body.seed,
             timeout_seconds=body.timeout_seconds,
+            tuning=body.tuning or None,
         )
     except table_lib.TableError as exc:
         return error(str(exc))
@@ -226,6 +228,7 @@ async def configure_table(code: str, body: CreateTable, token: str | None = None
             auction_mode=body.auction_mode,
             seat_kinds=[s.model_dump() for s in body.seats],
             timeout_seconds=body.timeout_seconds,
+            tuning=body.tuning or None,
         )
     except table_lib.TableError as exc:
         return error(str(exc))
@@ -297,6 +300,15 @@ async def public_config():
         "eligibility": config.AUCTION_ELIGIBILITY,
         "feed_cost": config.FEED_COST,
         "vp_per_toad": config.VP_PER_TOAD,
+        # The per-table balance form: the UI builds itself from this.
+        "tuning_defaults": config.tuning_defaults(),
+        "tuning_fields": [
+            {
+                "key": key, "label": label, "help": note,
+                "default": default, "min": low, "max": high, "group": group,
+            }
+            for key, label, note, default, low, high, group in config.TUNING_FIELDS
+        ],
         "production": config.PRODUCTION,
         "min_players": config.MIN_PLAYERS,
         "max_players": config.MAX_PLAYERS,

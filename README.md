@@ -112,6 +112,37 @@ memory and disk.
 Read the Render caveat above before relying on this in production: on the free
 plan the filesystem does not survive a spin-down.
 
+## Tuning scoring and bonuses per table
+
+Open **Scoring & bonus values** on the new-table screen. You can set:
+
+- **VP per toad**, and the three end-game majorities (most happiness / gold /
+  flies) individually — set one to 0 to switch that award off entirely.
+- The **bonus curve for each area**, as `(base + step x round) / divisor`,
+  rounded up. Fields and Mine default to `round + 1`; Rest to `ceil(round / 2)`.
+  Set the Rest divisor to 1 and it escalates as fast as the others; set a step
+  to 0 and the bonus stays flat all game.
+- The **war token curve**, on the same shape.
+
+A live table under the form shows what those numbers actually produce round by
+round, because the curve formula is not something anyone should have to
+evaluate in their head.
+
+**These are per table, not global.** They are stored in the game state, so a
+finished table keeps the numbers it was played with and two tables can run
+different values at the same time. They lock when the game starts, and the
+lobby line shows what a table is using. Your last-used values are remembered in
+the browser, so the next table starts from them rather than the defaults.
+
+To add a knob, add a row to `config.TUNING_FIELDS`; the form, the API and the
+validation all build themselves from it.
+
+Headless, the simulator takes the same overrides:
+
+```bash
+.venv/bin/python simulate.py -n 500 --tune vp_per_toad=2 --tune vp_most_gold=10
+```
+
 ## The simulator
 
 Bot-only games through the same engine, with no web layer involved.
