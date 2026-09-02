@@ -1,7 +1,7 @@
 # KINGDOM OF TOADS — LIVING DESIGN DOCUMENT
 
-**Version 1.1** — 28 August 2026
-**Status: FINAL for prototyping, now being tuned in play.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values. v1.1 carries the first three changes made from the playable build (see §11).
+**Version 1.2** — 1 September 2026
+**Status: FINAL for prototyping, now being tuned in play.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values. v1.1–v1.2 carry the changes made since the build became playable (see §11).
 
 ---
 
@@ -20,7 +20,7 @@ Kingdom of Toads is a competitive engine-building board game for 2–6 players. 
 - Toad tokens (shared general supply)
 - Fly tokens (resource)
 - Gold tokens (resource)
-- Property card deck (auction deck) — **18 types**; 51 cards at 4–6 players, 36 cards at 2–3 players, see §6
+- Property card deck (auction deck) — **24 types in two decks**, village and city; 67 cards at 4–6 players, 48 cards at 2–3 players, see §6
 
 ### Starting setup
 
@@ -114,7 +114,7 @@ Recruitment, placement and feeding are now all simultaneous. The **auction is th
 
 **Resolved — the full round's slate is revealed face-up at once, then auctioned one card at a time in the order revealed.**
 
-- Reveal property cards **equal to the number of players**, all face-up.
+- Reveal property cards **equal to the number of players**, all face-up, **drawn from the deck the round calls for** — village early, city late (§6a).
 - **Resolved (v1.1) — the slate is revealed a full round in advance.** As soon as a round's auction finishes, the *next* round's slate is dealt face-up. Round 1 is the exception: its slate is revealed at the start of its own auction, because there is no earlier round to reveal it in.
 - Cards are then auctioned **in the order they were revealed**, one at a time.
 - **Bids are paid in gold only.** Flies cannot be bid.
@@ -262,23 +262,65 @@ Between starvation and the war penalty, happiness has two independent sources of
 
 ## 6. Property Cards
 
-**Resolved — 18 card types, 51 cards total at 4–6 players.** Engine, instant and flat-scoring cards have **3 copies each**; conditional scoring cards have **2 copies each**. See the scaling table below for 2–3 player games.
+### Development: village and city
+
+**Resolved (v1.2) — the deck is split into two, and the game deals from one then the other.** Every card is either a **village** card or a **city** card. The first half of the game auctions only village cards; the second half auctions only city cards.
+
+- The turn happens at **round 4 of 6**. In general the city deck takes over at `floor(rounds / 2) + 1`, so an 8-round game turns at round 5 and a 10-round game at round 6. **Round 1 is always village.**
+- The round-ahead reveal (§5, Phase 2) crosses the boundary: the last village round's placement reveals the first city slate, so you see the city era coming while you still have a village round in which to prepare for it.
+
+**Why split the deck.** Under a single shuffle the Grand Monument was as likely to appear in round 1 as round 6, which made the arc of a game a matter of shuffle luck rather than design. Splitting gives the game a shape: village cards are small, cheap and cheaply gated — one or two toads — so the early rounds are about building something; city cards are larger, want three toads in an area, and carry most of the end-game scoring, so the late rounds are about converting what you built.
+
+It also gives the auction a rhythm. Village gold is spent on engines that will pay out over five more rounds; city gold is spent on points, or on an engine with two rounds left to run. The same purse means different things at different times.
+
+| | Types | Cards at 4–6p | Cards at 2–3p |
+| --- | --- | --- | --- |
+| **Village** | 12 | 35 | 24 |
+| **City** | 12 | 32 | 24 |
+| **Total** | **24** | **67** | **48** |
+
+**Supply check.** A 6-player game reveals 18 village and 18 city cards, out of 35 and 32. A 3-player game reveals 9 of each half of a 24-card pool. Every count leaves headroom for cards removed permanently by a tie-off, and no half can run dry at 6 rounds. At 10 rounds and 6 players the village half is drawn to 30 of 35, which is tight but holds.
+
+### Card groups
+
+**Resolved — 24 card types.** Engine, instant and flat-scoring cards have **3 copies each**; conditional scoring cards have **2 copies each**. See the scaling table below for 2–3 player games.
 
 ### Engine cards — ongoing effect, **2 VP each**
 
 Threshold-gated: the effect only triggers if you have at least the stated number of toads in that area at the time of the harvest.
 
-| Card         | Requirement        | Effect                  | VP  | Copies |
-| ------------ | ------------------ | ----------------------- | --- | ------ |
-| Fly Farm     | ≥2 toads in Fields | +2 flies each round     | 2   | 3      |
-| Great Marsh  | ≥3 toads in Fields | +4 flies each round     | 2   | 3      |
-| Gold Seam    | ≥2 toads in Mine   | **+3 gold** each round  | 2   | 3      |
-| Deep Vein    | ≥3 toads in Mine   | **+5 gold** each round  | 2   | 3      |
-| Lily Gardens | ≥2 toads in Rest   | +2 happiness each round | 2   | 3      |
-| Barracks     | —                  | +1 military strength    | 2   | 3      |
-| War College  | —                  | +2 military strength    | 2   | 3      |
+| Card                | Dev     | Requirement           | Effect                  | VP  | Copies |
+| ------------------- | ------- | --------------------- | ----------------------- | --- | ------ |
+| Fly Farm            | village | ≥2 toads in Fields    | +2 flies each round     | 2   | 3      |
+| Gold Seam           | village | ≥2 toads in Mine      | **+3 gold** each round  | 2   | 3      |
+| Lily Gardens        | village | **≥1 toad in Rest**   | +2 happiness each round | 2   | 3      |
+| Barracks            | village | —                     | +1 military strength    | 2   | 3      |
+| **Militia Post**    | village | **≥1 toad in Military** | **+2 gold** each round | 2   | 3      |
+| **Tadpole Nursery** | village | **≥2 toads in Rest**  | **+1 toad** each round  | 2   | 3      |
+| Great Marsh         | city    | ≥3 toads in Fields    | +4 flies each round     | 2   | 3      |
+| Deep Vein           | city    | ≥3 toads in Mine      | **+5 gold** each round  | 2   | 3      |
+| War College         | city    | —                     | +2 military strength    | 2   | 3      |
+| **Mercenary Camp**  | city    | **≥2 toads in Military** | **+4 gold** each round | 2 | 3      |
 
-**Subtotal: 7 types, 21 cards.**
+**Subtotal: 10 types, 30 cards.**
+
+**Militia Post and Mercenary Camp are the first production Military has ever had.** Until v1.2 a Military toad produced literally nothing — the war was, as §5 puts it, a tax you either pay in toads or pay in happiness. These two pay a **flat amount per round, not per toad**, so they reward *entering* the war rather than winning it by weight of numbers: one toad turns the tap on, and a second only matters if you also hold the Camp.
+
+Watch whether this makes Mine redundant for anyone holding both. Two toads in Military with both cards yields 6 gold a round — better than the same two toads in the Mine — and those toads are contesting the war at the same time.
+
+**Tadpole Nursery is the first card that breeds.** The toad arrives after placement, so it works from the following round, but it must be fed at the end of this one. It gives Rest a second reason to exist beyond happiness, which matters because Rest is the most frequently tied area in simulation.
+
+### Activated cards — the owner chooses
+
+**Resolved (v1.2) — one card group carries a decision.** Every other card in the deck is automatic. An activated card is permanent and scores like the rest, but its ability is an option its owner may take or decline each time it comes up.
+
+| Card          | Dev     | Ability                                                | VP  | Copies |
+| ------------- | ------- | ------------------------------------------------------ | --- | ------ |
+| **Austerity** | village | In any feeding phase: **skip feeding entirely** for **5 happiness** | 2 | 3 |
+
+Austerity feeds the whole kingdom or none of it — you cannot skip feeding *and* starve toads for the fly majority in the same round. It is usable every round, but the happiness track limits it: from 10 happiness you get two uses before hitting the floor, and the floor is the 4-flies-a-toad recruitment band.
+
+**This is a deliberate exception to a rule §6 states plainly below** — that there is no decision to make about a card once you own it. It earns the exception because it is the only lever a player has against a starvation spiral, and the spiral is otherwise unrecoverable: you starve, you lose happiness, toads get dearer, you starve again. One card that costs a lot of happiness to stop the bleeding is a fair escape hatch. If more activated cards follow, that rule should be rewritten rather than repeatedly excepted.
 
 **Gold engine cards are deliberately rated one step above their fly counterparts** (+3/+5 against +2/+4). Gold has no direct VP value, so a gold engine has to earn its keep entirely by converting into auction wins — which means it needs to out-produce a fly engine to be worth the same bid. The extra point per round is that premium.
 
@@ -288,14 +330,16 @@ All engine cards are flat 2 VP regardless of how strong the effect is. Balance i
 
 Two per effect category, a larger and a smaller.
 
-| Card          | Category  | Effect                   | VP  | Copies |
-| ------------- | --------- | ------------------------ | --- | ------ |
-| Festival      | Happiness | +5 happiness immediately | 2   | 3      |
-| Public Park   | Happiness | +3 happiness immediately | 2   | 3      |
-| Granary       | Flies     | **+8 flies** immediately | 2   | 3      |
-| Larder        | Flies     | +5 flies immediately     | 2   | 3      |
-| Spawning Pool | Toads     | Gain **3 toads** free    | 2   | 3      |
-| Tadpole Pond  | Toads     | Gain **2 toads** free    | 2   | 3      |
+| Card          | Dev     | Category  | Effect                   | VP  | Copies |
+| ------------- | ------- | --------- | ------------------------ | --- | ------ |
+| Public Park   | village | Happiness | +3 happiness immediately | 2   | 3      |
+| Larder        | village | Flies     | **+4 flies** immediately | 2   | 3      |
+| Tadpole Pond  | village | Toads     | Gain **1 toad** free     | 2   | 3      |
+| Festival      | city    | Happiness | +5 happiness immediately | 2   | 3      |
+| Granary       | city    | Flies     | **+8 flies** immediately | 2   | 3      |
+| Spawning Pool | city    | Toads     | Gain **3 toads** free    | 2   | 3      |
+
+**The village instants were cut in v1.2** — Larder from 5 flies to 4, Tadpole Pond from 2 toads to 1 — so that the pairs read as village-then-city rather than as two sizes of the same thing. A city instant should feel like a different order of magnitude, not an increment.
 
 **Subtotal: 6 types, 18 cards.**
 
@@ -323,11 +367,17 @@ Two consequences worth tracking in playtesting:
 
 ### Conditional scoring cards — **2 copies each**
 
-| Card              | Scores                       | Copies |
-| ----------------- | ---------------------------- | ------ |
-| Census            | 1 VP per 2 toads at game end | 2      |
-| Treasury          | 1 VP per 3 gold at game end  | 2      |
-| Hall of Victories | 2 VP per war token you hold  | 2      |
+| Card                  | Dev     | Scores                            | Copies |
+| --------------------- | ------- | --------------------------------- | ------ |
+| **Almshouse**         | village | **1 VP per 3 happiness** at game end | 2   |
+| Census                | city    | 1 VP per 2 toads at game end      | 2      |
+| Treasury              | city    | 1 VP per 3 gold at game end       | 2      |
+| Hall of Victories     | city    | 2 VP per war token you hold       | 2      |
+| **Guildhall**         | city    | **1 VP per 2 property cards** you own | 2  |
+
+**Almshouse gives happiness a second way to score.** Until v1.2 happiness paid out only through cheaper recruitment and the single 5 VP majority, which made it the most instrumental thing on the board. A card that converts a high track into points — and only for the player who won the auction for it — is a lighter touch than restoring a per-point rate.
+
+**Guildhall rewards the player who swept the auction**, which is the strategy simulation says currently loses. It is the only card that scores off other cards, so it also quietly rewards buying cheap village cards early.
 
 **Subtotal: 3 types, 6 cards.**
 
@@ -337,27 +387,29 @@ These are the scarcest cards in the deck and the most strategically loaded. **Tr
 
 | Group               | Types  | Cards  |
 | ------------------- | ------ | ------ |
-| Engine              | 7      | 21     |
+| Engine              | 10     | 30     |
+| Activated           | 1      | 3      |
 | Instant             | 6      | 18     |
 | Flat scoring        | 2      | 6      |
-| Conditional scoring | 3      | 6      |
-| **Total**           | **18** | **51** |
+| Conditional scoring | 5      | 10     |
+| **Total**           | **24** | **67** |
 
 ### Deck scaling by player count
 
-**Resolved — at 2 and 3 players, every card is at 2 copies, flat.** Engine, instant and flat-scoring cards drop from 3 copies to 2; conditional scoring cards stay at 2. The low-count deck is simply the full set of 18 types, doubled.
+**Resolved — at 2 and 3 players, every card is at 2 copies, flat.** Engine, instant and flat-scoring cards drop from 3 copies to 2; conditional scoring cards stay at 2. The low-count deck is simply the full set of 24 types, doubled.
 
 | Group               | Types  | 4–6 players | 2–3 players |
 | ------------------- | ------ | ----------- | ----------- |
-| Engine              | 7      | 21          | 14          |
+| Engine              | 10     | 30          | 20          |
+| Activated           | 1      | 3           | 2           |
 | Instant             | 6      | 18          | 12          |
 | Flat scoring        | 2      | 6           | 4           |
-| Conditional scoring | 3      | 6           | 6           |
-| **Total**           | **18** | **51**      | **36**      |
+| Conditional scoring | 5      | 10          | 10          |
+| **Total**           | **24** | **67**      | **48**      |
 
 The flat rule is easier to remember and to sort physically than "remove one of each" — two of everything, no exceptions.
 
-**Supply check.** A 6-player game reveals 36 of 51 cards. A 3-player game reveals 18 of 36, and a 2-player game 12 of 36. Every count leaves comfortable headroom for cards permanently removed by triple-tie auctions (§5, Phase 2).
+**Supply check.** See the per-deck table at the top of §6: each half is drawn separately, so the figure that matters is 18 of 35 village and 18 of 32 city at 6 players, not the combined total.
 
 **Conditional scorers become proportionally more common at low counts** — 6 of 36 rather than 6 of 51 — which is the right way round. With fewer cards surfacing overall, keeping the strategically loaded cards at full strength means Treasury and Census are likely to appear rather than being a coin flip. A gold-heavy player at 3 players can reasonably expect their payoff to exist.
 
@@ -368,11 +420,14 @@ The flat rule is easier to remember and to sort physically than "remove one of e
 | Group                   | When the effect fires                              | Kept for VP?     |
 | ----------------------- | -------------------------------------------------- | ---------------- |
 | **Engine**              | Every round, automatically, during Phase 3         | Yes — 2 VP       |
+| **Activated**           | Any round the owner chooses, at its stated cost     | Yes — 2 VP       |
 | **Instant**             | Once only, at the moment of purchase               | Yes — 2 VP       |
 | **Flat scoring**        | Never — the card has no effect                     | Yes — 5 or 10 VP |
 | **Conditional scoring** | Never during play; evaluated once at final scoring | Yes — as printed |
 
-So an instant card is a one-off burst of material followed by a permanent 2 VP, and a flat scoring card does nothing at all except sit in front of you and be worth points. There is no upkeep, no activation cost, and no decision to make about a card once you own it — buying it is the only choice.
+So an instant card is a one-off burst of material followed by a permanent 2 VP, and a flat scoring card does nothing at all except sit in front of you and be worth points. There is no upkeep and, for every group but one, no decision to make about a card once you own it — buying it is the only choice.
+
+**The exception is the activated group** (Austerity, above), added in v1.2. It is the only card whose owner chooses whether to use it, and it costs happiness rather than an upkeep in resources. The rule above still describes 23 of the 24 types.
 
 **Resolved** — there is no cap on how many cards one player may hold, consistent with the auction rule that a player may take as many properties per round as they can afford.
 
@@ -418,6 +473,20 @@ Scored at the end of the final round, after that round's feeding phase.
 At 1 VP the toad is still the thing you build, but it pays off through what it produces rather than by sitting on your mat. Property drops from a sideshow to about a third of the points scored, and the auction has to be contested rather than conceded.
 
 Watch two things in play. Toad count is still the **first tie-breaker** (§8), so it retains value beyond its 1 VP. And feeding is now cheaper to walk away from — see the note in §5, Phase 4.
+
+**Simulation note (v1.2): dropping the toad to 0 VP was tested and not adopted.** Across 250 bot games at 4 players:
+
+| VP per toad | Population strategy wins | Winner-to-last spread | Toads starved per game |
+| ----------- | ------------------------ | --------------------- | ---------------------- |
+| 2           | 97%                      | 67 VP                 | 14.0                   |
+| 1           | 87%                      | 47 VP                 | 14.0                   |
+| 0           | 60%                      | 30 VP                 | 17.5                   |
+
+Zero makes the game markedly closer — the spread between first and last halves — but it does not dethrone the population strategy, which still wins three games in five. **That is the important finding: toad VP was amplifying an advantage that does not come from toad VP.** With the toad worth nothing, a large population still wins most flies, most happiness and most wars; the majorities alone were worth more to that player than the toads had been.
+
+The cost of zero is that a toad becomes free to discard. Starvation rose by a quarter, because in the final round a toad costs nothing to kill and the flies it would have eaten count toward a 5 VP majority. The last round turns into a cull.
+
+So the lever for closing the gap is not the toad's VP. It is the end-game majorities, which is where that player's points actually come from.
 
 ### End-game majority bonuses
 
@@ -483,6 +552,13 @@ What remains are playtest questions rather than design decisions:
 - Does the tie-off chicken game cause too many cards to leave the deck at 5–6 players?
 - Does everyone open round 1 with a Rest toad to cross from happiness 10 into the 11–15 band?
 
+Opened by the v1.2 changes:
+
+- **Do Militia Post and Mercenary Camp make the Mine redundant?** Two toads in Military holding both cards out-earn two toads in the Mine, and fight the war as well.
+- **Is the village half too thin at 6 players?** 18 of 35 revealed is comfortable at 6 rounds; at 10 rounds it becomes 30 of 35.
+- **Does Austerity blunt the feeding squeeze §1 calls the heart of the game?** It is meant as an escape from a starvation spiral, not a licence to ignore the brake.
+- **Does the round-4 boundary feel like a gear change or an interruption?** The whole point is that it should give the game an arc.
+
 Opened by the v1.1 changes:
 
 - **Is 1 VP a toad now too little?** Toads are still the engine, and toad count is still the first tie-breaker, but they no longer pay for themselves at scoring. Watch whether players stop recruiting in the back half.
@@ -495,6 +571,8 @@ Closed since v0.1: auction format, auction tie resolution, final-round feeding, 
 ---
 
 ## 11. Change Log
+
+**v1.2 — 1 Sep 2026** — **The deck is split into village and city halves**, dealt in the first and second halves of the game respectively (`floor(rounds / 2) + 1` is the first city round). **Six new cards**: Militia Post and Mercenary Camp, the first production Military has ever had, paid flat per round rather than per toad; Tadpole Nursery, the first card that breeds toads; Almshouse, giving happiness a second way to score; Guildhall, which scores off property held; and **Austerity, the first card with a decision attached** — skip feeding entirely for 5 happiness, in any round. Village instants trimmed so the two halves read as different orders of magnitude: Larder 5 → 4 flies, Tadpole Pond 2 → 1 toad. Lily Gardens now needs only 1 toad in Rest. Deck grows from 18 types to 24.
 
 **v1.1 — 28 Aug 2026** — First tuning pass from the playable build. **Starting gold raised from 5 to 10**, so winning an early card no longer prices you out of the rest of the slate. **The auction slate is now revealed a round in advance** — dealt face-up as soon as the previous round's auction ends — so toads are placed already knowing what is coming up for sale; round 1 still reveals at the start of its own auction. **A surviving toad is worth 1 VP, down from 2**, moving points out of raw population and into property, the war and the majorities.
 
