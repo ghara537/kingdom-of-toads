@@ -146,6 +146,7 @@ table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-tr
 .area .rate { font-size: 12px; color: var(--muted); }
 .area .bonus { font-size: 12px; margin-top: 4px; }
 .area .bonus b { font-family: ui-monospace, monospace; }
+.area .bonus.warn { color: var(--warn); }
 .area .stepper { display: flex; gap: 4px; align-items: center; margin-top: 6px; }
 .area .stepper button { padding: 2px 10px; }
 

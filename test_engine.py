@@ -17,6 +17,12 @@ import engine
 # ---------------------------------------------------------------------------
 
 
+# The standing pressures (empty-Rest penalty, war tribute) are switched off in
+# tests that predate them, so each test keeps measuring one thing. They have
+# their own tests below.
+NO_PRESSURE = {"rest_empty_penalty": 0, "war_tribute": 0}
+
+
 def make_game(n: int = 3, seed: int = 1, **settings) -> engine.GameState:
     seats = [(f"p{i}", f"Player {i}") for i in range(1, n + 1)]
     return engine.new_game(seats, engine.Settings(**settings), seed=seed)
@@ -517,7 +523,7 @@ def test_deck_exhaustion_shortens_or_skips_the_auction():
 
 
 def test_production_rates():
-    state = make_game(2)
+    state = make_game(2, tuning=NO_PRESSURE)
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
         p.toads = 4
@@ -562,7 +568,7 @@ def test_majority_bonus_goes_to_a_unique_leader():
 
 
 def test_an_empty_area_awards_no_majority():
-    state = make_game(2)
+    state = make_game(2, tuning=NO_PRESSURE)
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
         p.toads = 2
@@ -584,7 +590,7 @@ def test_majority_bonuses_escalate_with_the_round():
 
 
 def test_war_winner_takes_the_token_and_everyone_else_loses_happiness():
-    state = make_game(3)
+    state = make_game(3, tuning=NO_PRESSURE)
     state.round = 3
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
@@ -599,7 +605,7 @@ def test_war_winner_takes_the_token_and_everyone_else_loses_happiness():
 
 def test_war_tie_awards_no_token_and_costs_nobody_happiness():
     """The denial play: matching the leader spares the whole table."""
-    state = make_game(3)
+    state = make_game(3, tuning=NO_PRESSURE)
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
         p.toads = 2
@@ -617,7 +623,7 @@ def test_war_tie_awards_no_token_and_costs_nobody_happiness():
 
 
 def test_no_military_at_all_is_a_tie_not_a_win():
-    state = make_game(2)
+    state = make_game(2, tuning=NO_PRESSURE)
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
         p.toads = 2
@@ -809,6 +815,122 @@ def test_tiebreakers_are_vp_then_toads_then_happiness():
 
 
 # ---------------------------------------------------------------------------
+# Standing pressures: the empty-Rest penalty and the war tribute
+# ---------------------------------------------------------------------------
+
+
+def test_putting_nobody_in_rest_costs_happiness():
+    state = make_game(3, tuning={"war_tribute": 0})
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 3
+    state = commit_all(state, {
+        "p1": place(fields=3),                 # nobody resting
+        "p2": place(fields=2, rest=1),         # one is enough
+        "p3": place(rest=3),
+    })
+    assert state.player("p1").happiness == config.START_HAPPINESS - 1
+    assert state.player("p2").happiness == config.START_HAPPINESS + 1      # one rest toad
+    assert any(e["type"] == "no_rest" for e in state.log)
+
+
+def test_the_rest_penalty_is_tunable_and_can_be_switched_off():
+    for penalty in (0, 3):
+        state = make_game(2, tuning={"rest_empty_penalty": penalty, "war_tribute": 0})
+        set_phase(state, engine.PHASE_PLACEMENT)
+        for p in state.players:
+            p.toads = 2
+        state = commit_all(state, {"p1": place(fields=2), "p2": place(fields=2)})
+        assert state.player("p1").happiness == config.START_HAPPINESS - penalty
+
+
+def test_a_player_with_no_toads_is_not_punished_for_not_resting():
+    state = make_game(2, tuning={"war_tribute": 0})
+    set_phase(state, engine.PHASE_PLACEMENT)
+    state.player("p1").toads = 0
+    state.player("p2").toads = 2
+    state = commit_all(state, {"p1": place(), "p2": place(rest=2)})
+    assert state.player("p1").happiness == config.START_HAPPINESS
+
+
+def test_war_losers_pay_tribute_to_the_winner():
+    state = make_game(3, tuning={"rest_empty_penalty": 0})
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 2
+    state = commit_all(state, {
+        "p1": place(military=2),
+        "p2": {**place(fields=2), "tribute": config.GOLD},
+        "p3": {**place(fields=2), "tribute": config.FLIES},
+    })
+    winner, gold_payer, fly_payer = (state.player(p) for p in ("p1", "p2", "p3"))
+    assert gold_payer.gold == config.START_GOLD - 1
+    assert fly_payer.flies == config.START_FLIES + 4 - 1     # harvest, then pay
+    # The winner collects from every loser, in whatever they chose to pay.
+    assert winner.gold == config.START_GOLD + 1
+    assert winner.flies == config.START_FLIES + 1
+    assert any(e["type"] == "tribute" for e in state.log)
+
+
+def test_a_tied_war_collects_no_tribute():
+    state = make_game(3, tuning={"rest_empty_penalty": 0})
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 2
+    state = commit_all(state, {
+        "p1": place(military=2), "p2": place(military=2), "p3": place(fields=2),
+    })
+    assert [p.gold for p in state.players] == [config.START_GOLD] * 3
+
+
+def test_an_empty_purse_cannot_dodge_the_tribute():
+    """Choosing gold you do not have pays out of flies instead."""
+    state = make_game(2, tuning={"rest_empty_penalty": 0, "war_tribute": 2})
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 2
+    state.player("p2").gold = 1        # one short of the bill
+    state = commit_all(state, {
+        "p1": place(military=2),
+        "p2": {**place(fields=2), "tribute": config.GOLD},
+    })
+    loser, winner = state.player("p2"), state.player("p1")
+    assert loser.gold == 0
+    # 4 flies harvested, +2 for the uncontested Fields majority, 1 taken as the
+    # part of the tribute the purse could not cover.
+    assert loser.flies == config.START_FLIES + 4 + 2 - 1
+    assert (winner.gold, winner.flies) == (config.START_GOLD + 1, config.START_FLIES + 1)
+
+
+def test_a_player_who_holds_nothing_pays_nothing():
+    state = make_game(2, tuning={"rest_empty_penalty": 0, "war_tribute": 3})
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 2
+    state.player("p2").gold = 0
+    state.player("p2").flies = 0
+    state = commit_all(state, {"p1": place(military=2), "p2": place(rest=2)})
+    assert state.player("p2").gold == 0
+    assert state.player("p2").flies == 0
+    assert state.player("p1").gold == config.START_GOLD   # nothing to collect
+
+
+def test_the_tribute_choice_is_validated():
+    state = make_game(2)
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 2
+    with pytest.raises(engine.InvalidAction) as exc:
+        engine.submit_action(
+            state, "p1", {**place(fields=2), "tribute": "toads"}
+        )
+    assert "gold or flies" in str(exc.value)
+    # Omitting it is fine — gold is the default.
+    state = engine.submit_action(state, "p1", place(fields=2))
+    assert state.commitments["p1"]["placement"][config.FIELDS] == 2
+
+
+# ---------------------------------------------------------------------------
 # Village and city
 # ---------------------------------------------------------------------------
 
@@ -872,7 +994,7 @@ def test_each_deck_is_drawn_down_separately():
 
 
 def test_militia_post_pays_a_flat_amount_not_per_toad():
-    state = make_game(2)
+    state = make_game(2, tuning=NO_PRESSURE)
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
         p.toads = 4
@@ -885,7 +1007,7 @@ def test_militia_post_pays_a_flat_amount_not_per_toad():
 
 
 def test_mercenary_camp_needs_two_toads_in_military():
-    state = make_game(2)
+    state = make_game(2, tuning=NO_PRESSURE)
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
         p.toads = 3
@@ -895,7 +1017,7 @@ def test_mercenary_camp_needs_two_toads_in_military():
     )
     assert state.player("p1").gold == config.START_GOLD    # one toad is not enough
 
-    state = make_game(2)
+    state = make_game(2, tuning=NO_PRESSURE)
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
         p.toads = 3

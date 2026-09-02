@@ -760,6 +760,17 @@ function renderMat(me, v) {
     const b = el('div', 'bonus');
     b.innerHTML = bonuses[area];
     box.appendChild(b);
+    const rules = v.tuning || {};
+    if (area === 'rest' && rules.rest_empty_penalty && !(placement.rest || 0)) {
+      const warn = el('div', 'bonus warn');
+      warn.innerHTML = `Empty: <b>\u2212${rules.rest_empty_penalty}</b> happiness`;
+      box.appendChild(warn);
+    }
+    if (area === 'military' && rules.war_tribute) {
+      const note = el('div', 'bonus');
+      note.innerHTML = `Losers pay <b>${rules.war_tribute}</b> to the winner`;
+      box.appendChild(note);
+    }
     if (editable) {
       const st = el('div', 'stepper');
       const minus = el('button', null, '−');
@@ -1031,6 +1042,7 @@ function actionSignature(v, me) {
     v.phase, v.round, mine, Boolean(v.your_commitment),
     me.toads, me.gold, me.flies, me.recruit_cost,
     a.index, a.stage, a.high_bid, a.tied_amount, a.turn, placed,
+    S.tribute,
   ];
   // While we are waiting on other people, the panel lists who — so it has to
   // keep up. While it is our turn it must not twitch under our fingers.
@@ -1184,10 +1196,31 @@ function renderPlacement(host, title, v, me) {
     : `<b>${left}</b> of <b>${me.toads}</b> toads still to place — use the + buttons on the mat.`;
   host.appendChild(summary);
 
+  const rules = v.tuning || {};
+  if (rules.war_tribute) {
+    const label = el('label', null,
+      `If you lose the war, pay ${rules.war_tribute} in`);
+    label.title = 'Declared now, before the war resolves. If the resource you '
+      + 'pick runs short, the balance comes out of the other one.';
+    const pick = el('select');
+    pick.id = 'tribute-pick';
+    for (const [value, text] of [['gold', 'Gold'], ['flies', 'Flies']]) {
+      const o = el('option', null, text); o.value = value; pick.appendChild(o);
+    }
+    pick.value = S.tribute || 'gold';
+    pick.onchange = () => { S.tribute = pick.value; };
+    label.appendChild(pick);
+    const wrap = el('div', 'form-row');
+    wrap.appendChild(label);
+    host.appendChild(wrap);
+  }
+
   const row = el('div', 'form-row');
   const go = el('button', 'primary', 'Commit placement');
   go.disabled = left !== 0;
-  go.onclick = () => send({ type: 'place', placement: S.draft });
+  go.onclick = () => send({
+    type: 'place', placement: S.draft, tribute: S.tribute || 'gold',
+  });
   row.appendChild(go);
   const allFields = el('button', null, 'All to Fields');
   allFields.onclick = () => {

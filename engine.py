@@ -328,6 +328,9 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
             raise InvalidAction(
                 f"you must place exactly {player.toads} toads, not {total}"
             )
+        tribute = action.get("tribute", config.GOLD)
+        if tribute not in (config.GOLD, config.FLIES):
+            raise InvalidAction("tribute must be paid in gold or flies")
         return
 
     if state.phase == PHASE_FEED:
@@ -805,9 +808,18 @@ def _resolve_placement(state: GameState) -> None:
     # Happiness accumulates raw and is clamped once, at the end of the phase.
     happiness = {p.id: p.happiness for p in state.players}
 
+    idle_penalty = tuning["rest_empty_penalty"]
+    idle = []
+
     for player in state.players:
         placement = placements[player.id]
         player.last_placement = placement
+
+        # Nobody resting is itself a choice, and it costs. A player with no
+        # toads at all is spared: they have nobody to rest.
+        if idle_penalty and player.toads and not placement.get(config.REST):
+            happiness[player.id] -= idle_penalty
+            idle.append(player.name)
 
         # (b) per-toad production
         for area, per_toad in config.PRODUCTION.items():
@@ -840,6 +852,15 @@ def _resolve_placement(state: GameState) -> None:
                 # still has to be fed at the end of this one.
                 player.toads += amount
             # MILITARY_STRENGTH is handled in the war step.
+
+    if idle:
+        _log(
+            state,
+            "no_rest",
+            players=list(idle),
+            amount=idle_penalty,
+            text=f"Nobody resting: {', '.join(idle)} lose {idle_penalty} happiness.",
+        )
 
     # (d) area majorities — unique holder of at least MAJORITY_MIN_TOADS
     for area in config.MAJORITY_AREAS:
@@ -885,11 +906,32 @@ def _resolve_placement(state: GameState) -> None:
         )
     else:
         vp = config.war_token_vp(rnd, tuning)
-        state.player(war_winner).war_tokens.append(vp)
+        winner = state.player(war_winner)
+        winner.war_tokens.append(vp)
         # (f) every other player pays, but only because there was a winner
+        tribute = tuning["war_tribute"]
+        spoils: dict[str, dict[str, int]] = {}
         for player in state.players:
-            if player.id != war_winner:
-                happiness[player.id] -= config.WAR_LOSS_PENALTY
+            if player.id == war_winner:
+                continue
+            happiness[player.id] -= config.WAR_LOSS_PENALTY
+            if tribute:
+                choice = state.commitments[player.id].get("tribute", config.GOLD)
+                paid = _pay_tribute(player, winner, tribute, choice)
+                if paid:
+                    spoils[player.name] = paid
+        if spoils:
+            detail = ", ".join(
+                f"{name} {'/'.join(f'{n} {r}' for r, n in paid.items())}"
+                for name, paid in spoils.items()
+            )
+            _log(
+                state,
+                "tribute",
+                player=war_winner,
+                spoils={k: dict(v) for k, v in spoils.items()},
+                text=f"Tribute to {winner.name}: {detail}.",
+            )
         _log(
             state,
             "war",
@@ -907,6 +949,32 @@ def _resolve_placement(state: GameState) -> None:
 
     state.commitments = {}
     state.phase = PHASE_FEED
+
+
+def _pay_tribute(
+    payer: PlayerState, winner: PlayerState, amount: int, choice: str
+) -> dict[str, int]:
+    """Move ``amount`` from payer to winner, in their chosen resource.
+
+    The choice is declared with the placement, before anyone knows who won.
+    If the chosen resource runs short the balance comes out of the other one,
+    so emptying your purse at the auction is not a way to dodge the bill. A
+    player who holds neither pays what they have and no more.
+    """
+    order = (config.GOLD, config.FLIES) if choice == config.GOLD else (
+        config.FLIES, config.GOLD)
+    paid: dict[str, int] = {}
+    for resource in order:
+        if amount <= 0:
+            break
+        take = min(getattr(payer, resource), amount)
+        if not take:
+            continue
+        setattr(payer, resource, getattr(payer, resource) - take)
+        setattr(winner, resource, getattr(winner, resource) + take)
+        paid[resource] = take
+        amount -= take
+    return paid
 
 
 def _normalise_placement(placement: dict[str, int]) -> dict[str, int]:

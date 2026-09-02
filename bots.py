@@ -88,7 +88,11 @@ class Bot:
         if phase == engine.PHASE_AUCTION:
             return self.auction(view)
         if phase == engine.PHASE_PLACEMENT:
-            return {"type": "place", "placement": self.place(view)}
+            return {
+                "type": "place",
+                "placement": self.place(view),
+                "tribute": self.tribute(view),
+            }
         if phase == engine.PHASE_FEED:
             if self.use_austerity(view):
                 return {
@@ -203,9 +207,11 @@ class Bot:
         placement = self._military_correction(view, placement)
         placement = self._happiness_correction(view, placement)
         placement = self._upcoming_correction(view, placement)
-        # Thresholds go last so an owned engine card always gets its staff:
-        # a card that fires every round beats one round of extra mining.
+        # Thresholds go before the last correction so an owned engine card
+        # always gets its staff: a card that fires every round beats one round
+        # of extra mining.
         placement = self._threshold_correction(view, placement)
+        placement = self._idle_rest_correction(view, placement)
         return placement
 
     def _upcoming_correction(self, view: dict, placement: dict) -> dict:
@@ -231,6 +237,15 @@ class Bot:
             donor_order=[a for a in self._donors() if a != config.MINE],
         )
 
+    def tribute(self, view: dict) -> str:
+        """Which resource to hand over if we lose the war.
+
+        Declared before the war resolves, so it is a standing preference:
+        pay out of whichever pile is deeper.
+        """
+        me = _me(view)
+        return config.GOLD if me["gold"] >= me["flies"] else config.FLIES
+
     def military_target(self, view: dict) -> int:
         """How many toads to send to war. Read from public last-round data."""
         me = _me(view)
@@ -241,6 +256,31 @@ class Bot:
     def _military_correction(self, view: dict, placement: dict) -> dict:
         target = self.military_target(view)
         return _move_to(placement, config.MILITARY, target, donor_order=self._donors())
+
+    def _idle_rest_correction(self, view: dict, placement: dict) -> dict:
+        """One toad in Rest, if leaving it empty costs happiness.
+
+        A single toad turns the penalty off and earns happiness besides, so it
+        is nearly always worth it once the table charges for an empty Rest.
+        """
+        me = _me(view)
+        penalty = _rules(view)["rest_empty_penalty"]
+        if not penalty or placement[config.REST] or me["toads"] < 2:
+            return placement
+        # Never rob an area that is currently switching on an owned card.
+        spoken_for = {
+            card_lib.get(cid).requirement[0]
+            for cid in me["cards"]
+            if card_lib.get(cid).requirement
+            and card_lib.get(cid).requirement_met(placement)
+        }
+        donors = [
+            a for a in self._donors()
+            if a != config.REST and a not in spoken_for and placement[a] > 0
+        ]
+        if not donors:
+            return placement
+        return _move_to(placement, config.REST, 1, donor_order=donors)
 
     def _happiness_correction(self, view: dict, placement: dict) -> dict:
         """Buy happiness back when the recruitment band is getting expensive."""

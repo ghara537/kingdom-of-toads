@@ -124,6 +124,14 @@ WAR_TOKEN_VP_PER_ROUND = 1
 # Happiness lost by every non-winner — but only if the war HAS a winner.
 WAR_LOSS_PENALTY = 1
 
+# Gold or flies each non-winner hands to the war's winner, again only if the
+# war had a winner. The payer chooses which resource; see engine._pay_tribute.
+WAR_TRIBUTE = 1
+
+# Happiness lost by a player who put nobody in Rest this round. A standing
+# pressure on the track, so holding station costs something.
+REST_EMPTY_PENALTY = 1
+
 # Minimum military strength needed to win the war (ruling 10).
 WAR_MIN_STRENGTH = 1
 
@@ -520,11 +528,18 @@ TUNING_FIELDS = (
      MAJORITY_BONUS_CURVES[REST]["per_round"], 0, 10, "rest"),
     ("rest_bonus_divisor", "Rest divisor", "Divide by this to slow the curve down.",
      MAJORITY_BONUS_CURVES[REST]["divisor"], 1, 10, "rest"),
+    ("rest_empty_penalty", "Empty Rest penalty",
+     "Happiness lost by a player who puts nobody in Rest this round. 0 to switch off.",
+     REST_EMPTY_PENALTY, 0, 10, "rest"),
 
     ("war_token_base", "War token base", "War token VP = base + step x round.",
      WAR_TOKEN_VP_BASE, 0, 20, "war"),
     ("war_token_per_round", "War token step", "How much the token grows each round.",
      WAR_TOKEN_VP_PER_ROUND, 0, 10, "war"),
+    ("war_tribute", "Tribute per loser",
+     "Gold or flies each non-winner pays the winner, their choice which. "
+     "Only when the war has a winner. 0 to switch off.",
+     WAR_TRIBUTE, 0, 10, "war"),
 )
 
 TUNING_DEFAULTS: dict[str, int] = {f[0]: f[3] for f in TUNING_FIELDS}
