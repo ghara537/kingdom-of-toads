@@ -299,10 +299,27 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
             raise InvalidAction("cannot recruit a negative number of toads")
         if count > config.RECRUIT_CAP:
             raise InvalidAction(f"recruitment is capped at {config.RECRUIT_CAP}")
-        cost = count * config.recruit_cost(player.happiness)
+
+        tuning = state.settings.tuning
+        bought = _as_int(action.get("gold_count", 0), "gold_count")
+        if bought < 0:
+            raise InvalidAction("cannot buy a negative number of toads")
+        if bought and not tuning["recruit_with_gold"]:
+            raise InvalidAction("this table recruits with flies only")
+        if bought > count:
+            raise InvalidAction(
+                f"you asked for {count} toads but would pay gold for {bought}"
+            )
+        gold_due = bought * tuning["recruit_gold_cost"]
+        if gold_due > player.gold:
+            raise InvalidAction(
+                f"{bought} toads costs {gold_due} gold; you hold {player.gold}"
+            )
+        cost = (count - bought) * config.recruit_cost(player.happiness)
         if cost > player.flies:
             raise InvalidAction(
-                f"{count} toads costs {cost} flies; you hold {player.flies}"
+                f"{count - bought} toads costs {cost} flies; "
+                f"you hold {player.flies}"
             )
         return
 
@@ -490,19 +507,31 @@ def _advance(state: GameState) -> GameState:
 
 
 def _resolve_recruit(state: GameState) -> None:
+    tuning = state.settings.tuning
     for player in state.players:
-        count = state.commitments[player.id]["count"]
-        cost = count * config.recruit_cost(player.happiness)
-        player.flies -= cost
+        commitment = state.commitments[player.id]
+        count = commitment["count"]
+        bought = commitment.get("gold_count", 0)
+        flies_due = (count - bought) * config.recruit_cost(player.happiness)
+        gold_due = bought * tuning["recruit_gold_cost"]
+        player.flies -= flies_due
+        player.gold -= gold_due
         player.toads += count
         if count:
+            paid = " and ".join(
+                part for part in (
+                    f"{flies_due} flies" if flies_due else "",
+                    f"{gold_due} gold" if gold_due else "",
+                ) if part
+            ) or "nothing"
             _log(
                 state,
                 "recruit",
                 player=player.id,
                 count=count,
-                cost=cost,
-                text=f"{player.name} recruited {count} for {cost} flies.",
+                cost=flies_due,
+                gold_cost=gold_due,
+                text=f"{player.name} recruited {count} for {paid}.",
             )
     state.commitments = {}
     _begin_auction(state)

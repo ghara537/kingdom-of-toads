@@ -191,6 +191,7 @@ function renderSeatConfig() {
 const TUNING_STORE = 'kot:tuning';
 const GROUP_LABEL = {
   start: 'Starting resources',
+  recruit: 'Recruiting',
   auction: 'Auction floor',
   scoring: 'End-game scoring',
   fields: 'Fields majority',
@@ -1082,7 +1083,7 @@ function renderAction(v, me) {
     return;
   }
 
-  if (v.phase === 'recruit') return renderRecruit(host, title, me);
+  if (v.phase === 'recruit') return renderRecruit(host, title, me, v);
   if (v.phase === 'auction') return renderBid(host, title, v, me);
   if (v.phase === 'placement') return renderPlacement(host, title, v, me);
   if (v.phase === 'feed') return renderFeed(host, title, me);
@@ -1099,26 +1100,58 @@ function describeCommitment(c) {
   return '';
 }
 
-function renderRecruit(host, title, me) {
+function renderRecruit(host, title, me, v) {
   title.textContent = 'Recruit toads';
+  const rules = v.tuning || {};
   const cost = me.recruit_cost;
-  const max = Math.min(S.cfg.recruit_cap, Math.floor(me.flies / cost));
+  const goldCost = rules.recruit_gold_cost;
+  const withGold = Boolean(rules.recruit_with_gold);
+  const cap = S.cfg.recruit_cap;
+  const maxFlies = Math.min(cap, Math.floor(me.flies / cost));
+  const maxGold = withGold ? Math.min(cap, Math.floor(me.gold / goldCost)) : 0;
+
   const row = el('div', 'form-row');
   const input = el('input');
-  input.type = 'number'; input.min = '0'; input.max = String(max); input.value = '0';
-  const preview = el('span', 'hint');
-  const update = () => {
-    const n = Math.max(0, Math.min(max, parseInt(input.value || '0', 10)));
-    preview.textContent = `${n} toads × ${cost} flies = ${n * cost} flies `
-      + `(you hold ${me.flies}, and will need ${me.toads + n} to feed everyone).`;
-  };
-  input.addEventListener('input', update);
-  const label = el('label', null, '');
-  label.textContent = 'Toads (max ' + max + ')';
+  input.type = 'number'; input.min = '0'; input.max = String(maxFlies); input.value = '0';
+  const label = el('label', null, `With flies, ${cost} each (max ${maxFlies})`);
   label.appendChild(input);
   row.appendChild(label);
+
+  let goldInput = null;
+  if (withGold) {
+    goldInput = el('input');
+    goldInput.type = 'number'; goldInput.min = '0';
+    goldInput.max = String(maxGold); goldInput.value = '0';
+    const goldLabel = el('label', null, `With gold, ${goldCost} each (max ${maxGold})`);
+    goldLabel.title = 'A flat price — the happiness band does not apply to it.';
+    goldLabel.appendChild(goldInput);
+    row.appendChild(goldLabel);
+  }
+
+  const preview = el('span', 'hint');
+  const read = () => {
+    const byFlies = Math.max(0, Math.min(maxFlies, parseInt(input.value || '0', 10)));
+    const byGold = goldInput
+      ? Math.max(0, Math.min(maxGold, parseInt(goldInput.value || '0', 10))) : 0;
+    return { byFlies, byGold, total: byFlies + byGold };
+  };
+  const update = () => {
+    const { byFlies, byGold, total } = read();
+    let text = `${total} toads for ${byFlies * cost} flies`;
+    if (byGold) text += ` and ${byGold * goldCost} gold`;
+    text += ` (you hold ${me.flies} flies, ${me.gold} gold, and will need `
+      + `${me.toads + total} flies to feed everyone).`;
+    if (total > cap) text += `  Over the cap of ${cap}.`;
+    preview.textContent = text;
+  };
+  input.addEventListener('input', update);
+  if (goldInput) goldInput.addEventListener('input', update);
+
   const go = el('button', 'primary', 'Commit');
-  go.onclick = () => send({ type: 'recruit', count: parseInt(input.value || '0', 10) });
+  go.onclick = () => {
+    const { byGold, total } = read();
+    send({ type: 'recruit', count: total, gold_count: byGold });
+  };
   row.appendChild(go);
   host.appendChild(row);
   host.appendChild(preview);

@@ -72,6 +72,12 @@ RECRUIT_COST_BANDS = (
 
 RECRUIT_CAP = 4                 # per player per round; toad instants bypass it
 
+# Off by default. When switched on, a toad may be bought with gold instead of
+# flies at a flat price that ignores the happiness band — which deliberately
+# breaks the resource separation in DESIGN.md §3, so it is opt-in.
+RECRUIT_WITH_GOLD = 0
+RECRUIT_GOLD_COST = 3
+
 # ---------------------------------------------------------------------------
 # Phase 2 — auction
 # ---------------------------------------------------------------------------
@@ -487,6 +493,15 @@ TUNING_FIELDS = (
     ("start_happiness", "Starting happiness",
      f"Where the track starts, {HAPPINESS_MIN}-{HAPPINESS_MAX}.",
      START_HAPPINESS, HAPPINESS_MIN, HAPPINESS_MAX, "start"),
+
+    ("recruit_with_gold", "Pay in gold",
+     "1 allows toads to be bought with gold as well as flies; 0 is flies only. "
+     "Off by default: it bypasses the happiness band entirely.",
+     RECRUIT_WITH_GOLD, 0, 1, "recruit"),
+    ("recruit_gold_cost", "Gold per toad",
+     "Flat price, the same in every happiness band. Does nothing unless "
+     "'Pay in gold' is on.",
+     RECRUIT_GOLD_COST, 1, 30, "recruit"),
 
     ("auction_min_bid", "Minimum bid", "The smallest bid that is not a pass.",
      AUCTION_MIN_BID, 1, 30, "auction"),

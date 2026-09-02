@@ -84,7 +84,7 @@ class Bot:
         """Choose an action from the player view alone."""
         phase = view["phase"]
         if phase == engine.PHASE_RECRUIT:
-            return {"type": "recruit", "count": self.recruit(view)}
+            return self.recruit_action(view)
         if phase == engine.PHASE_AUCTION:
             return self.auction(view)
         if phase == engine.PHASE_PLACEMENT:
@@ -105,13 +105,48 @@ class Bot:
 
     # -- phase 1 ------------------------------------------------------------
 
+    # Gold to keep back for the auction rather than spend on toads.
+    auction_purse = 6
+
     def recruit(self, view: dict) -> int:
+        """Toads to take this round, however they are paid for."""
+        return self.recruit_action(view)["count"]
+
+    def recruit_action(self, view: dict) -> dict:
+        """Buy toads with flies, with gold, or with both.
+
+        Where a table allows gold recruitment the two prices compete directly:
+        flies move with the happiness band, gold does not, so a player deep in
+        the cheap bands should still pay in flies while an unhappy one is
+        better off paying cash.
+        """
         me = _me(view)
-        cost = me["recruit_cost"]
-        if cost > self.recruit_cost_ceiling:
-            return 0
-        spendable = max(0, me["flies"] - self._feed_reserve(view))
-        return max(0, min(self.recruit_appetite, config.RECRUIT_CAP, spendable // cost))
+        rules = _rules(view)
+        fly_price = me["recruit_cost"]
+        gold_price = rules["recruit_gold_cost"]
+        allowed = bool(rules["recruit_with_gold"])
+
+        spendable_flies = max(0, me["flies"] - self._feed_reserve(view))
+        by_flies = spendable_flies // fly_price if fly_price else 0
+        spendable_gold = max(0, me["gold"] - self.auction_purse)
+        by_gold = spendable_gold // gold_price if allowed and gold_price else 0
+
+        room = min(self.recruit_appetite, config.RECRUIT_CAP)
+        if fly_price > self.recruit_cost_ceiling and not by_gold:
+            return {"type": "recruit", "count": 0, "gold_count": 0}
+
+        # Spend the cheaper currency first, then top up with the other.
+        if fly_price <= gold_price or not allowed:
+            flies_bought = min(room, by_flies)
+            gold_bought = min(room - flies_bought, by_gold)
+        else:
+            gold_bought = min(room, by_gold)
+            flies_bought = min(room - gold_bought, by_flies)
+        return {
+            "type": "recruit",
+            "count": flies_bought + gold_bought,
+            "gold_count": gold_bought,
+        }
 
     def _feed_reserve(self, view: dict) -> int:
         """Flies to hold back so this round's toads do not starve.
@@ -408,8 +443,9 @@ class Miner(Bot):
         "fly_farm": 0.7,
         "great_marsh": 0.7,
     }
-    recruit_appetite = 2
+    recruit_appetite = 4
     recruit_cost_ceiling = 3
+    auction_purse = 10
     happiness_floor = 7
     tie_off_nerve = 0.7   # deep purse, happy to play chicken
     mine_stretch = 3

@@ -815,6 +815,92 @@ def test_tiebreakers_are_vp_then_toads_then_happiness():
 
 
 # ---------------------------------------------------------------------------
+# Recruiting with gold (opt-in)
+# ---------------------------------------------------------------------------
+
+GOLD_RECRUIT = {"recruit_with_gold": 1, "recruit_gold_cost": 3}
+
+
+def test_gold_recruitment_is_off_unless_the_table_turns_it_on():
+    state = make_game(2)
+    with pytest.raises(engine.InvalidAction) as exc:
+        engine.submit_action(
+            state, "p1", {"type": "recruit", "count": 1, "gold_count": 1}
+        )
+    assert "flies only" in str(exc.value)
+
+
+def test_a_toad_can_be_bought_with_gold_when_enabled():
+    state = make_game(2, tuning=GOLD_RECRUIT)
+    state = commit_all(state, {
+        "p1": {"type": "recruit", "count": 2, "gold_count": 2},
+        "p2": {"type": "recruit", "count": 0},
+    })
+    p1 = state.player("p1")
+    assert p1.toads == config.START_TOADS + 2
+    assert p1.gold == config.START_GOLD - 6      # 2 at 3 gold
+    assert p1.flies == config.START_FLIES        # no flies touched
+
+
+def test_a_recruitment_can_be_paid_for_both_ways_at_once():
+    state = make_game(2, tuning=GOLD_RECRUIT)
+    state = commit_all(state, {
+        "p1": {"type": "recruit", "count": 3, "gold_count": 1},
+        "p2": {"type": "recruit", "count": 0},
+    })
+    p1 = state.player("p1")
+    assert p1.toads == config.START_TOADS + 3
+    assert p1.gold == config.START_GOLD - 3      # one bought
+    assert p1.flies == config.START_FLIES - 6    # two at the 6-10 band rate
+
+
+def test_gold_recruitment_ignores_the_happiness_band():
+    """The whole point, and the reason it is off by default."""
+    state = make_game(2, tuning=GOLD_RECRUIT)
+    state.player("p1").happiness = 1             # 4 flies a toad, the worst band
+    state.player("p1").gold = 12
+    state = commit_all(state, {
+        "p1": {"type": "recruit", "count": 4, "gold_count": 4},
+        "p2": {"type": "recruit", "count": 0},
+    })
+    # The full cap, at the bottom of the track, without spending a fly.
+    assert state.player("p1").toads == config.START_TOADS + 4
+    assert state.player("p1").gold == 0
+    assert state.player("p1").flies == config.START_FLIES
+
+
+def test_gold_recruitment_still_obeys_the_cap_and_the_purse():
+    state = make_game(2, tuning=GOLD_RECRUIT)
+    with pytest.raises(engine.InvalidAction) as exc:
+        engine.submit_action(
+            state, "p1", {"type": "recruit", "count": 5, "gold_count": 5}
+        )
+    assert "capped" in str(exc.value)
+
+    state.player("p1").gold = 5
+    with pytest.raises(engine.InvalidAction) as exc:
+        engine.submit_action(
+            state, "p1", {"type": "recruit", "count": 2, "gold_count": 2}
+        )
+    assert "6 gold" in str(exc.value)
+
+    with pytest.raises(engine.InvalidAction):
+        # More paid for than asked for.
+        engine.submit_action(
+            state, "p1", {"type": "recruit", "count": 1, "gold_count": 2}
+        )
+
+
+def test_the_gold_price_is_tunable():
+    state = make_game(2, tuning={"recruit_with_gold": 1, "recruit_gold_cost": 8})
+    state = commit_all(state, {
+        "p1": {"type": "recruit", "count": 1, "gold_count": 1},
+        "p2": {"type": "recruit", "count": 0},
+    })
+    assert state.player("p1").gold == config.START_GOLD - 8
+
+
+# ---------------------------------------------------------------------------
 # Standing pressures: the empty-Rest penalty and the war tribute
 # ---------------------------------------------------------------------------
 
