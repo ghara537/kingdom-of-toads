@@ -128,7 +128,9 @@ class GameState:
     # sets the bidding order in a live auction; every other phase is
     # simultaneous, where it is a display token only.
     first_player: int = 0
-    deck: list[str] = field(default_factory=list)
+    # Two decks, drawn from according to the round: village early, city late.
+    deck_village: list[str] = field(default_factory=list)
+    deck_city: list[str] = field(default_factory=list)
     # Next round's slate, drawn and revealed as soon as this round's auction
     # ends, so placement can be made knowing what is coming up for sale.
     upcoming: list[str] = field(default_factory=list)
@@ -181,8 +183,11 @@ def new_game(
         raise ValueError(f"unknown auction mode: {settings.auction_mode}")
 
     seed = random.randrange(2**31) if seed is None else seed
-    deck = card_lib.deck_composition(len(seats))
-    random.Random(seed).shuffle(deck)
+    shuffler = random.Random(seed)
+    village = card_lib.deck_composition(len(seats), config.VILLAGE)
+    city = card_lib.deck_composition(len(seats), config.CITY)
+    shuffler.shuffle(village)
+    shuffler.shuffle(city)
 
     tuning = settings.tuning
     state = GameState(
@@ -199,7 +204,8 @@ def new_game(
         ],
         settings=settings,
         seed=seed,
-        deck=deck,
+        deck_village=village,
+        deck_city=city,
     )
     _log(state, "game_start", text=f"Round 1 — recruitment. {len(seats)} players.")
     return state
@@ -230,6 +236,19 @@ def pending_players(state: GameState) -> list[str]:
             if _eligible_to_bid(state, p) and p.id not in state.commitments
         ]
     return []
+
+
+def austerity_cost(player: PlayerState) -> int | None:
+    """Happiness price to skip feeding, or None if this seat cannot.
+
+    The cheapest copy wins if somebody owns more than one.
+    """
+    costs = [
+        card_lib.get(cid).ability_cost
+        for cid in player.cards
+        if card_lib.get(cid).ability_kind == "skip_feeding"
+    ]
+    return min(costs) if costs else None
 
 
 def _eligible_to_bid(state: GameState, player: PlayerState) -> bool:
@@ -319,6 +338,16 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
             raise InvalidAction("cannot keep a negative number of toads")
         if keep > player.toads:
             raise InvalidAction(f"you only have {player.toads} toads")
+        if action.get("austerity"):
+            cost = austerity_cost(player)
+            if cost is None:
+                raise InvalidAction("you do not own a card that skips feeding")
+            if keep != player.toads:
+                raise InvalidAction(
+                    "Austerity feeds the whole kingdom — keep all "
+                    f"{player.toads} toads"
+                )
+            return
         if keep * config.FEED_COST > player.flies:
             raise InvalidAction(
                 f"feeding {keep} toads costs {keep * config.FEED_COST} flies; "
@@ -479,15 +508,22 @@ def _resolve_recruit(state: GameState) -> None:
 # --- Phase 2 ---------------------------------------------------------------
 
 
-def _draw_slate(state: GameState) -> list[str]:
+def _deck_for(state: GameState, round_number: int) -> list[str]:
+    """The deck a given round's slate is drawn from."""
+    stage = config.development_for_round(round_number, state.settings.rounds)
+    return state.deck_city if stage == config.CITY else state.deck_village
+
+
+def _draw_slate(state: GameState, round_number: int) -> list[str]:
+    deck = _deck_for(state, round_number)
     wanted = len(state.players) * config.AUCTION_CARDS_PER_PLAYER
-    return [state.deck.pop() for _ in range(min(wanted, len(state.deck)))]
+    return [deck.pop() for _ in range(min(wanted, len(deck)))]
 
 
 def _begin_auction(state: GameState) -> None:
     # From round 2 on the slate was already revealed at the end of the previous
     # round's auction, so players placed their toads knowing what was coming.
-    slate = state.upcoming or _draw_slate(state)
+    slate = state.upcoming or _draw_slate(state, state.round)
     state.upcoming = []
     state.auction = AuctionState(
         slate=slate,
@@ -746,7 +782,7 @@ def _begin_placement(state: GameState) -> None:
     how much Mine you need — already knowing what will be for sale next round.
     """
     if not state.upcoming and state.round < state.settings.rounds:
-        state.upcoming = _draw_slate(state)
+        state.upcoming = _draw_slate(state, state.round + 1)
         if state.upcoming:
             names = ", ".join(card_lib.get(cid).name for cid in state.upcoming)
             _log(
@@ -799,6 +835,10 @@ def _resolve_placement(state: GameState) -> None:
                 player.gold += amount
             elif kind == config.HAPPINESS:
                 happiness[player.id] += amount
+            elif kind == config.TOADS:
+                # Arrives after placement, so it works next round — but it
+                # still has to be fed at the end of this one.
+                player.toads += amount
             # MILITARY_STRENGTH is handled in the war step.
 
     # (d) area majorities — unique holder of at least MAJORITY_MIN_TOADS
@@ -902,7 +942,23 @@ def _unique_leader(counts: dict[str, int], minimum: int) -> str | None:
 
 def _resolve_feed(state: GameState) -> None:
     for player in state.players:
-        keep = state.commitments[player.id]["keep"]
+        commitment = state.commitments[player.id]
+        keep = commitment["keep"]
+        if commitment.get("austerity"):
+            # Nobody eats and nobody starves; the kingdom pays in morale.
+            cost = austerity_cost(player) or 0
+            player.happiness = config.clamp_happiness(player.happiness - cost)
+            _log(
+                state,
+                "austerity",
+                player=player.id,
+                cost=cost,
+                text=(
+                    f"{player.name} declared austerity: no feeding this round, "
+                    f"-{cost} happiness."
+                ),
+            )
+            continue
         starved = player.toads - keep
         player.flies -= keep * config.FEED_COST
         player.toads = keep
@@ -963,6 +1019,7 @@ def score(state: GameState) -> dict[str, Any]:
                     config.TOADS: player.toads,
                     config.GOLD: player.gold,
                     config.WAR_TOKENS: len(player.war_tokens),
+                    config.CARDS: len(player.cards),
                     config.FLIES: player.flies,
                     config.HAPPINESS: player.happiness,
                 }[metric]
@@ -1062,6 +1119,7 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
                 "committed": p.id in state.commitments,
                 "waiting_on": p.id in waiting,
                 "can_bid": _eligible_to_bid(state, p),
+                "austerity_cost": austerity_cost(p),
             }
         )
 
@@ -1075,7 +1133,11 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
         "seat_order": seat_order(state),
         "players": players,
         "waiting_on": list(waiting),
-        "deck_remaining": len(state.deck),
+        "deck_remaining": len(state.deck_village) + len(state.deck_city),
+        "deck_village_remaining": len(state.deck_village),
+        "deck_city_remaining": len(state.deck_city),
+        "development": config.development_for_round(rnd, state.settings.rounds),
+        "city_from_round": config.city_from_round(state.settings.rounds),
         # Public by design: everyone sees next round's slate at the same moment.
         "upcoming": list(state.upcoming),
         "removed": list(state.removed),
@@ -1150,7 +1212,8 @@ def deserialize(data: dict[str, Any]) -> GameState:
         round=data["round"],
         phase=data["phase"],
         first_player=data.get("first_player", 0),
-        deck=list(data["deck"]),
+        deck_village=list(data.get("deck_village", data.get("deck", []))),
+        deck_city=list(data.get("deck_city", [])),
         upcoming=list(data.get("upcoming", [])),
         removed=list(data["removed"]),
         auction=AuctionState(**auction) if auction else None,

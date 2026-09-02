@@ -41,6 +41,14 @@ BASE_CARD_VALUE = {
     "census": 4,
     "treasury": 4,
     "hall_of_victories": 3,
+    # Village additions
+    "militia_post": 6,
+    "tadpole_nursery": 7,
+    "almshouse": 4,
+    "austerity": 5,
+    # City additions
+    "mercenary_camp": 8,
+    "guildhall": 5,
 }
 
 
@@ -82,6 +90,12 @@ class Bot:
         if phase == engine.PHASE_PLACEMENT:
             return {"type": "place", "placement": self.place(view)}
         if phase == engine.PHASE_FEED:
+            if self.use_austerity(view):
+                return {
+                    "type": "feed",
+                    "keep": _me(view)["toads"],
+                    "austerity": True,
+                }
             return {"type": "feed", "keep": self.feed(view)}
         raise ValueError(f"no bot decision for phase {phase}")
 
@@ -266,6 +280,22 @@ class Bot:
         return sorted(config.AREAS, key=lambda a: self.weights.get(a, 0))
 
     # -- phase 4 ------------------------------------------------------------
+
+    def use_austerity(self, view: dict) -> bool:
+        """Skip feeding rather than starve, if the happiness is there to burn.
+
+        Only worth it when toads would actually die, and never at a price that
+        drops us to the floor — the bottom recruitment band costs more than the
+        toads are worth.
+        """
+        me = _me(view)
+        cost = me.get("austerity_cost")
+        if cost is None:
+            return False
+        would_starve = me["toads"] - min(me["toads"], me["flies"] // config.FEED_COST)
+        if would_starve <= 0:
+            return False
+        return me["happiness"] - cost >= self.happiness_floor - 2
 
     def feed(self, view: dict) -> int:
         me = _me(view)

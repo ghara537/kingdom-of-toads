@@ -618,6 +618,10 @@ function renderStatus(v) {
       ? ` · <span class="waiting">waiting on ${names(v.waiting_on)}</span>`
       : ' · resolving…';
   }
+  if (v.development) {
+    const stage = v.development === 'city' ? 'City' : 'Village';
+    text += ` \u00b7 <span class="stage ${v.development}">${stage}</span>`;
+  }
   text += ' <span id="phase-timer"></span>';
   $('status-line').innerHTML = text;
 }
@@ -793,12 +797,13 @@ function cardChip(id) {
 
 const KIND_NOTE = {
   engine: 'Fires every round during placement, while the requirement is met.',
+  activated: 'Yours to use, or not, in any feeding phase.',
   instant: 'Fired once, at the moment it was bought.',
   flat: 'No effect. Just points.',
   conditional: 'Counted once, at the end of the game.',
 };
 const KIND_LABEL = {
-  engine: 'Engine', instant: 'Instant',
+  engine: 'Engine', instant: 'Instant', activated: 'Activated',
   flat: 'Scoring', conditional: 'Scoring — conditional',
 };
 
@@ -813,7 +818,9 @@ function showCardTip(target) {
   // Conditional scorers have no printed VP — the effect line carries it.
   head.appendChild(el('span', 'tip-vp', c.vp ? `${c.vp} VP` : 'VP varies'));
   tip.appendChild(head);
-  tip.appendChild(el('div', 'tip-kind', KIND_LABEL[c.group] || c.group));
+  const stage = c.development === 'city' ? 'City' : 'Village';
+  tip.appendChild(el('div', 'tip-kind',
+    `${stage} \u00b7 ${KIND_LABEL[c.group] || c.group}`));
 
   if (c.requirement) {
     const [area, count] = c.requirement;
@@ -1203,6 +1210,17 @@ function renderPlacement(host, title, v, me) {
 function renderFeed(host, title, me) {
   title.textContent = 'Feed your toads';
   const max = Math.min(me.toads, Math.floor(me.flies / S.cfg.feed_cost));
+
+  if (me.austerity_cost !== null && me.austerity_cost !== undefined) {
+    const box = el('div', 'austerity');
+    const go = el('button', 'danger', `Declare austerity (\u2212${me.austerity_cost} happiness)`);
+    go.onclick = () => send({ type: 'feed', keep: me.toads, austerity: true });
+    box.appendChild(go);
+    box.appendChild(el('p', 'hint',
+      `Nobody eats and nobody starves: all ${me.toads} toads survive for free, `
+      + `and you drop to ${Math.max(1, me.happiness - me.austerity_cost)} happiness.`));
+    host.appendChild(box);
+  }
   const row = el('div', 'form-row');
   const input = el('input');
   input.type = 'number'; input.min = '0'; input.max = String(max); input.value = String(max);

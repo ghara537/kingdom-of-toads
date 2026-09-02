@@ -24,6 +24,7 @@ import config
 COLUMNS = [
     "id",
     "name",
+    "development",
     "group",
     "vp",
     "copies_2_3p",
@@ -35,6 +36,8 @@ COLUMNS = [
     "conditional_metric",
     "conditional_per",
     "conditional_vp",
+    "ability",
+    "ability_cost",
     "summary",
     "bot_base_value",
     "notes",
@@ -49,9 +52,11 @@ def rows() -> list[dict]:
         req_area, req_toads = card.requirement or ("", "")
         kind, amount = card.effect or ("", "")
         metric, per, cond_vp = card.conditional or ("", "", "")
+        ability, ability_cost = card.ability or ("", "")
         out.append({
             "id": card.id,
             "name": card.name,
+            "development": card.development,
             "group": card.group,
             "vp": card.vp,
             "copies_2_3p": low[card.group],
@@ -63,6 +68,8 @@ def rows() -> list[dict]:
             "conditional_metric": metric,
             "conditional_per": per,
             "conditional_vp": cond_vp,
+            "ability": ability,
+            "ability_cost": ability_cost,
             "summary": card.describe(),
             "bot_base_value": bots.BASE_CARD_VALUE.get(card.id, ""),
             "notes": "",
@@ -89,11 +96,16 @@ def to_csv() -> str:
     writer.writeheader()
     order = {
         config.GROUP_ENGINE: 0,
-        config.GROUP_INSTANT: 1,
-        config.GROUP_FLAT: 2,
-        config.GROUP_CONDITIONAL: 3,
+        config.GROUP_ACTIVATED: 1,
+        config.GROUP_INSTANT: 2,
+        config.GROUP_FLAT: 3,
+        config.GROUP_CONDITIONAL: 4,
     }
-    for row in sorted(rows(), key=lambda r: (order[r["group"]], r["id"])):
+    stage = {config.VILLAGE: 0, config.CITY: 1}
+    for row in sorted(
+        rows(),
+        key=lambda r: (stage[r["development"]], order[r["group"]], r["id"]),
+    ):
         writer.writerow(row)
     writer.writerow(totals_row())
     return buffer.getvalue()

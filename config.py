@@ -32,6 +32,7 @@ HAPPINESS = "happiness"
 TOADS = "toads"
 MILITARY_STRENGTH = "military_strength"
 WAR_TOKENS = "war_tokens"
+CARDS = "cards"            # conditional-scoring metric: property held
 
 # ---------------------------------------------------------------------------
 # Game structure
@@ -162,7 +163,14 @@ TIEBREAK_ORDER = ("victory_points", TOADS, HAPPINESS)
 # Deck composition — DESIGN §6
 # ---------------------------------------------------------------------------
 
+# Development stage. Village cards fill the early rounds, city cards the late
+# ones, so the deck escalates with the game instead of shuffling flat.
+VILLAGE = "village"
+CITY = "city"
+DEVELOPMENTS = (VILLAGE, CITY)
+
 GROUP_ENGINE = "engine"
+GROUP_ACTIVATED = "activated"   # permanent, but its ability is a choice
 GROUP_INSTANT = "instant"
 GROUP_FLAT = "flat"
 GROUP_CONDITIONAL = "conditional"
@@ -170,15 +178,17 @@ GROUP_CONDITIONAL = "conditional"
 # Player counts at or below this use the low-count deck (2 copies of all).
 LOW_COUNT_MAX_PLAYERS = 3
 
-CARD_COPIES_HIGH_COUNT = {      # 4-6 players -> 51 cards
+CARD_COPIES_HIGH_COUNT = {      # 4-6 players
     GROUP_ENGINE: 3,
+    GROUP_ACTIVATED: 3,
     GROUP_INSTANT: 3,
     GROUP_FLAT: 3,
     GROUP_CONDITIONAL: 2,
 }
 
-CARD_COPIES_LOW_COUNT = {       # 2-3 players -> 36 cards
+CARD_COPIES_LOW_COUNT = {       # 2-3 players
     GROUP_ENGINE: 2,
+    GROUP_ACTIVATED: 2,
     GROUP_INSTANT: 2,
     GROUP_FLAT: 2,
     GROUP_CONDITIONAL: 2,
@@ -199,6 +209,7 @@ CARD_DEFS = {
     # --- Engine: fires every Phase 3 while the threshold is met -------------
     "fly_farm": {
         "name": "Fly Farm",
+        "development": VILLAGE,
         "group": GROUP_ENGINE,
         "vp": 2,
         "requirement": (FIELDS, 2),
@@ -206,6 +217,7 @@ CARD_DEFS = {
     },
     "great_marsh": {
         "name": "Great Marsh",
+        "development": CITY,
         "group": GROUP_ENGINE,
         "vp": 2,
         "requirement": (FIELDS, 3),
@@ -213,6 +225,7 @@ CARD_DEFS = {
     },
     "gold_seam": {
         "name": "Gold Seam",
+        "development": VILLAGE,
         "group": GROUP_ENGINE,
         "vp": 2,
         "requirement": (MINE, 2),
@@ -220,6 +233,7 @@ CARD_DEFS = {
     },
     "deep_vein": {
         "name": "Deep Vein",
+        "development": CITY,
         "group": GROUP_ENGINE,
         "vp": 2,
         "requirement": (MINE, 3),
@@ -227,13 +241,15 @@ CARD_DEFS = {
     },
     "lily_gardens": {
         "name": "Lily Gardens",
+        "development": VILLAGE,
         "group": GROUP_ENGINE,
         "vp": 2,
-        "requirement": (REST, 2),
+        "requirement": (REST, 1),
         "effect": (HAPPINESS, 2),
     },
     "barracks": {
         "name": "Barracks",
+        "development": VILLAGE,
         "group": GROUP_ENGINE,
         "vp": 2,
         "requirement": None,
@@ -241,6 +257,7 @@ CARD_DEFS = {
     },
     "war_college": {
         "name": "War College",
+        "development": CITY,
         "group": GROUP_ENGINE,
         "vp": 2,
         "requirement": None,
@@ -250,49 +267,57 @@ CARD_DEFS = {
     # --- Instant: fires once, on purchase ----------------------------------
     "festival": {
         "name": "Festival",
+        "development": CITY,
         "group": GROUP_INSTANT,
         "vp": 2,
         "effect": (HAPPINESS, 5),
     },
     "public_park": {
         "name": "Public Park",
+        "development": VILLAGE,
         "group": GROUP_INSTANT,
         "vp": 2,
         "effect": (HAPPINESS, 3),
     },
     "granary": {
         "name": "Granary",
+        "development": CITY,
         "group": GROUP_INSTANT,
         "vp": 2,
         "effect": (FLIES, 8),
     },
     "larder": {
         "name": "Larder",
+        "development": VILLAGE,
         "group": GROUP_INSTANT,
         "vp": 2,
-        "effect": (FLIES, 5),
+        "effect": (FLIES, 4),
     },
     "spawning_pool": {
         "name": "Spawning Pool",
+        "development": CITY,
         "group": GROUP_INSTANT,
         "vp": 2,
         "effect": (TOADS, 3),
     },
     "tadpole_pond": {
         "name": "Tadpole Pond",
+        "development": VILLAGE,
         "group": GROUP_INSTANT,
         "vp": 2,
-        "effect": (TOADS, 2),
+        "effect": (TOADS, 1),
     },
 
     # --- Flat scoring: no effect -------------------------------------------
     "monument": {
         "name": "Monument",
+        "development": VILLAGE,
         "group": GROUP_FLAT,
         "vp": 5,
     },
     "grand_monument": {
         "name": "Grand Monument",
+        "development": CITY,
         "group": GROUP_FLAT,
         "vp": 10,
     },
@@ -300,21 +325,74 @@ CARD_DEFS = {
     # --- Conditional scoring: evaluated once at final scoring ---------------
     "census": {
         "name": "Census",
+        "development": CITY,
         "group": GROUP_CONDITIONAL,
         "vp": 0,
         "conditional": (TOADS, 2, 1),          # 1 VP per 2 toads
     },
     "treasury": {
         "name": "Treasury",
+        "development": CITY,
         "group": GROUP_CONDITIONAL,
         "vp": 0,
         "conditional": (GOLD, 3, 1),           # 1 VP per 3 gold
     },
     "hall_of_victories": {
         "name": "Hall of Victories",
+        "development": CITY,
         "group": GROUP_CONDITIONAL,
         "vp": 0,
         "conditional": (WAR_TOKENS, 1, 2),     # 2 VP per war token
+    },
+    "militia_post": {
+        "name": "Militia Post",
+        "development": VILLAGE,
+        "group": GROUP_ENGINE,
+        "vp": 2,
+        "requirement": (MILITARY, 1),
+        "effect": (GOLD, 2),
+    },
+    "tadpole_nursery": {
+        "name": "Tadpole Nursery",
+        "development": VILLAGE,
+        "group": GROUP_ENGINE,
+        "vp": 2,
+        "requirement": (REST, 2),
+        "effect": (TOADS, 1),
+    },
+    "mercenary_camp": {
+        "name": "Mercenary Camp",
+        "development": CITY,
+        "group": GROUP_ENGINE,
+        "vp": 2,
+        "requirement": (MILITARY, 2),
+        "effect": (GOLD, 4),
+    },
+
+    # --- Activated: permanent, but the ability is a choice -----------------
+    "austerity": {
+        "name": "Austerity",
+        "development": VILLAGE,
+        "group": GROUP_ACTIVATED,
+        "vp": 2,
+        # (ability, cost): skip feeding this round for 5 happiness. Usable
+        # every round, but the happiness floor makes it self-limiting.
+        "ability": ("skip_feeding", 5),
+    },
+
+    "almshouse": {
+        "name": "Almshouse",
+        "development": VILLAGE,
+        "group": GROUP_CONDITIONAL,
+        "vp": 0,
+        "conditional": (HAPPINESS, 3, 1),      # 1 VP per 3 happiness
+    },
+    "guildhall": {
+        "name": "Guildhall",
+        "development": CITY,
+        "group": GROUP_CONDITIONAL,
+        "vp": 0,
+        "conditional": (CARDS, 2, 1),          # 1 VP per 2 property cards
     },
 }
 
@@ -483,6 +561,19 @@ def end_majorities(tuning: dict[str, int] | None = None) -> dict[str, int]:
 
 def clamp_happiness(value: int) -> int:
     return max(HAPPINESS_MIN, min(HAPPINESS_MAX, value))
+
+
+def city_from_round(rounds: int) -> int:
+    """First round whose slate is drawn from the city deck.
+
+    The village half rounds down, so a 6-round game turns at round 4 and an
+    8-round game at round 5. Round 1 is always village.
+    """
+    return max(2, rounds // 2 + 1)
+
+
+def development_for_round(round_number: int, rounds: int) -> str:
+    return CITY if round_number >= city_from_round(rounds) else VILLAGE
 
 
 def card_copies(player_count: int) -> dict[str, int]:

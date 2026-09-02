@@ -50,6 +50,12 @@ h3 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; letter-spac
 #status-line { flex: 1; font-size: 14px; }
 #status-line .phase { font-weight: 600; }
 #status-line .waiting { color: var(--warn); }
+.austerity { margin: 10px 0; padding: 8px 10px; border: 1px dashed var(--warn); border-radius: 5px; }
+.austerity .hint { margin: 6px 0 0; }
+#status-line .stage { font-weight: 600; }
+#status-line .stage.village { color: var(--fields); }
+#status-line .stage.city { color: var(--toads); }
+.card-chip.activated { border-left: 3px solid var(--warn); }
 #status-line .timer { font-family: ui-monospace, monospace; color: var(--muted); }
 #status-line .timer.urgent { color: var(--warn); font-weight: 700; }
 button.tiny { padding: 1px 6px; font-size: 11px; color: var(--muted); }

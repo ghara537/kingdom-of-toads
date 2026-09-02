@@ -346,7 +346,8 @@ def test_keepalive_reports_uptime_so_a_cold_start_is_visible(client):
 
 def test_card_catalog_and_config_are_published(client):
     catalog = client.get("/api/cards").json()
-    assert len(catalog) == 18
+    assert len(catalog) == len(config.CARD_DEFS)
+    assert {c["development"] for c in catalog.values()} == set(config.DEVELOPMENTS)
     assert catalog["grand_monument"]["vp"] == 10
     assert catalog["great_marsh"]["requirement"] == ["fields", 3]
 

@@ -278,6 +278,7 @@ async def card_catalog():
         card.id: {
             "name": card.name,
             "group": card.group,
+            "development": card.development,
             "vp": card.vp,
             "text": card.describe(),
             "requirement": list(card.requirement) if card.requirement else None,

@@ -30,9 +30,14 @@ def commit_all(state: engine.GameState, actions: dict[str, dict]) -> engine.Game
 
 
 def stack_deck(state: engine.GameState, card_ids: list[str]) -> None:
-    """Force the next slate to be exactly ``card_ids``, in that order."""
+    """Force the next slate to be exactly ``card_ids``, in that order.
+
+    Round 1 draws from the village deck, so that is the one to stack. The
+    engine does not check a card's development when drawing, so a city card
+    can be planted here to test its effect early.
+    """
     filler = ["monument"] * 30
-    state.deck = filler + list(reversed(card_ids))
+    state.deck_village = filler + list(reversed(card_ids))
 
 
 def to_auction(
@@ -83,18 +88,23 @@ def test_starting_setup_matches_design():
         )
     assert state.round == 1
     assert state.phase == engine.PHASE_RECRUIT
-    assert len(state.deck) == 51
+    assert len(state.deck_village) + len(state.deck_city) == card_lib.deck_size(4)
 
 
 def test_low_player_count_uses_the_small_deck():
-    assert len(make_game(2).deck) == 36
-    assert len(make_game(3).deck) == 36
-    assert len(make_game(4).deck) == 51
+    def size(state):
+        return len(state.deck_village) + len(state.deck_city)
+
+    assert size(make_game(2)) == card_lib.deck_size(2)
+    assert size(make_game(3)) == card_lib.deck_size(3)
+    assert size(make_game(4)) == card_lib.deck_size(4)
+    assert card_lib.deck_size(2) < card_lib.deck_size(4)
 
 
 def test_deck_is_deterministic_for_a_seed():
-    assert make_game(4, seed=99).deck == make_game(4, seed=99).deck
-    assert make_game(4, seed=99).deck != make_game(4, seed=100).deck
+    assert make_game(4, seed=99).deck_village == make_game(4, seed=99).deck_village
+    assert make_game(4, seed=99).deck_city == make_game(4, seed=99).deck_city
+    assert make_game(4, seed=99).deck_village != make_game(4, seed=100).deck_village
 
 
 def test_player_count_bounds():
@@ -464,7 +474,8 @@ def test_previewed_cards_are_still_accounted_for():
             {pid: {"type": "bid", "amount": 0} for pid in engine.pending_players(state)},
         )
     owned = sum(len(p.cards) for p in state.players)
-    total = owned + len(state.deck) + len(state.removed) + len(state.upcoming)
+    total = (owned + len(state.deck_village) + len(state.deck_city)
+             + len(state.removed) + len(state.upcoming))
     assert total == card_lib.deck_size(3)
 
 
@@ -482,7 +493,7 @@ def test_a_preview_survives_a_serialise_reload():
 
 def test_deck_exhaustion_shortens_or_skips_the_auction():
     state = make_game(3)
-    state.deck = ["monument"]
+    state.deck_village = ["monument"]
     state = commit_all(
         state, {p.id: {"type": "recruit", "count": 0} for p in state.players}
     )
@@ -493,7 +504,7 @@ def test_deck_exhaustion_shortens_or_skips_the_auction():
     assert state.phase == engine.PHASE_PLACEMENT
 
     state = make_game(3)
-    state.deck = []
+    state.deck_village = []
     state = commit_all(
         state, {p.id: {"type": "recruit", "count": 0} for p in state.players}
     )
@@ -795,6 +806,171 @@ def test_tiebreakers_are_vp_then_toads_then_happiness():
     # A dead-even table is a shared win.
     even = make_game(2)
     assert sorted(engine.score(even)["winners"]) == ["p1", "p2"]
+
+
+# ---------------------------------------------------------------------------
+# Village and city
+# ---------------------------------------------------------------------------
+
+
+def test_the_early_rounds_deal_village_and_the_late_ones_city():
+    state = make_game(3, rounds=6)
+    seen = {}
+    guard = 0
+    while not state.finished:
+        guard += 1
+        assert guard < 500
+        if state.phase == engine.PHASE_AUCTION and state.auction:
+            for entry in state.auction.results:
+                seen.setdefault(state.round, set()).add(
+                    card_lib.get(entry["card"]).development
+                )
+        pid = engine.pending_players(state)[0]
+        state = engine.submit_action(state, pid, engine.default_action(state, pid))
+
+    assert seen[1] == seen[2] == seen[3] == {config.VILLAGE}
+    assert seen[4] == seen[5] == seen[6] == {config.CITY}
+
+
+def test_the_split_follows_the_round_count():
+    assert config.city_from_round(6) == 4
+    assert config.city_from_round(8) == 5
+    assert config.city_from_round(10) == 6
+    assert config.city_from_round(2) == 2      # round 1 is always village
+    assert config.development_for_round(3, 6) == config.VILLAGE
+    assert config.development_for_round(4, 6) == config.CITY
+
+    short = make_game(2, rounds=2)
+    assert engine.player_view(short, "p1")["city_from_round"] == 2
+    assert engine.player_view(short, "p1")["development"] == config.VILLAGE
+
+
+def test_the_preview_shows_the_city_deck_one_round_early():
+    """Round 3's placement reveals the first city slate."""
+    state = make_game(2, rounds=6)
+    state.round = 3
+    state.phase = engine.PHASE_AUCTION
+    state.auction = engine.AuctionState()
+    engine._begin_placement(state)
+    assert state.upcoming
+    assert all(card_lib.get(c).development == config.CITY for c in state.upcoming)
+
+
+def test_each_deck_is_drawn_down_separately():
+    state = make_game(4)
+    village, city = len(state.deck_village), len(state.deck_city)
+    state = commit_all(
+        state, {p.id: {"type": "recruit", "count": 0} for p in state.players}
+    )
+    assert len(state.deck_village) == village - 4    # one card per player
+    assert len(state.deck_city) == city              # untouched in round 1
+
+
+# ---------------------------------------------------------------------------
+# The new cards
+# ---------------------------------------------------------------------------
+
+
+def test_militia_post_pays_a_flat_amount_not_per_toad():
+    state = make_game(2)
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 4
+    state.player("p1").cards = ["militia_post"]
+    state = commit_all(
+        state, {"p1": place(military=4), "p2": place(fields=4)}
+    )
+    # 4 military toads, still +2 gold: the card pays per round, not per toad.
+    assert state.player("p1").gold == config.START_GOLD + 2
+
+
+def test_mercenary_camp_needs_two_toads_in_military():
+    state = make_game(2)
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 3
+    state.player("p1").cards = ["mercenary_camp"]
+    state = commit_all(
+        state, {"p1": place(military=1, fields=2), "p2": place(fields=3)}
+    )
+    assert state.player("p1").gold == config.START_GOLD    # one toad is not enough
+
+    state = make_game(2)
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 3
+    state.player("p1").cards = ["mercenary_camp"]
+    state = commit_all(
+        state, {"p1": place(military=2, fields=1), "p2": place(fields=3)}
+    )
+    assert state.player("p1").gold == config.START_GOLD + 4
+
+
+def test_tadpole_nursery_breeds_a_toad_each_round():
+    state = make_game(2)
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 3
+    state.player("p1").cards = ["tadpole_nursery", "tadpole_nursery"]
+    state = commit_all(state, {"p1": place(rest=2, fields=1), "p2": place(fields=3)})
+    assert state.player("p1").toads == 5          # two copies, both fire
+    # And the new arrivals have to be fed like anyone else.
+    assert state.phase == engine.PHASE_FEED
+    with pytest.raises(engine.InvalidAction):
+        engine.submit_action(state, "p1", {"type": "feed", "keep": 6})
+
+
+def test_almshouse_and_guildhall_score_at_the_end():
+    state = make_game(2)
+    p1 = state.player("p1")
+    p1.happiness = 11
+    p1.cards = ["almshouse", "guildhall", "monument", "festival"]
+    breakdown = engine.score(state)["breakdown"]["p1"]
+    assert breakdown["conditional"] == 3 + 2      # 11//3 happiness, 4//2 cards
+    assert breakdown["cards"] == 5 + 2            # monument + festival, printed
+
+
+def test_austerity_skips_feeding_for_happiness():
+    state = make_game(2)
+    set_phase(state, engine.PHASE_FEED)
+    for p in state.players:
+        p.toads = 8
+        p.flies = 0                # nobody could feed anyone
+    state.player("p1").cards = ["austerity"]
+
+    with pytest.raises(engine.InvalidAction):
+        # It feeds the whole kingdom or none of it.
+        engine.submit_action(state, "p1", {"type": "feed", "keep": 3, "austerity": True})
+    with pytest.raises(engine.InvalidAction):
+        # p2 does not own the card.
+        engine.submit_action(state, "p2", {"type": "feed", "keep": 8, "austerity": True})
+
+    state = commit_all(state, {
+        "p1": {"type": "feed", "keep": 8, "austerity": True},
+        "p2": {"type": "feed", "keep": 0},
+    })
+    assert state.player("p1").toads == 8          # everyone survives
+    assert state.player("p1").flies == 0          # and it cost no flies
+    assert state.player("p1").happiness == config.START_HAPPINESS - 5
+    assert state.player("p2").toads == 0          # p2 starved the lot
+    assert any(e["type"] == "austerity" for e in state.log)
+
+
+def test_austerity_is_limited_by_the_happiness_floor():
+    """Usable every round, but the track runs out before the toads do."""
+    state = make_game(2)
+    set_phase(state, engine.PHASE_FEED)
+    for p in state.players:
+        p.toads = 4
+    state.player("p1").cards = ["austerity"]
+    state.player("p1").happiness = 3
+    state = commit_all(state, {
+        "p1": {"type": "feed", "keep": 4, "austerity": True},
+        "p2": {"type": "feed", "keep": 4},
+    })
+    assert state.player("p1").happiness == config.HAPPINESS_MIN
+    # And at the floor it drops you into the most expensive recruitment band.
+    assert config.recruit_cost(state.player("p1").happiness) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -1161,7 +1337,8 @@ def test_a_full_game_plays_to_a_score_without_breaking_an_invariant(players, mod
     assert state.scores["winners"]
     # Every card is accounted for: still in the deck, owned, or removed.
     owned = sum(len(p.cards) for p in state.players)
-    accounted = owned + len(state.deck) + len(state.removed) + len(state.upcoming)
+    accounted = (owned + len(state.deck_village) + len(state.deck_city)
+                 + len(state.removed) + len(state.upcoming))
     assert accounted == card_lib.deck_size(players)
 
 
