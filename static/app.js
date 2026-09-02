@@ -1086,7 +1086,7 @@ function renderAction(v, me) {
   if (v.phase === 'recruit') return renderRecruit(host, title, me, v);
   if (v.phase === 'auction') return renderBid(host, title, v, me);
   if (v.phase === 'placement') return renderPlacement(host, title, v, me);
-  if (v.phase === 'feed') return renderFeed(host, title, me);
+  if (v.phase === 'feed') return renderFeed(host, title, me, v);
 }
 
 function describeCommitment(c) {
@@ -1103,62 +1103,88 @@ function describeCommitment(c) {
 function renderRecruit(host, title, me, v) {
   title.textContent = 'Recruit toads';
   const rules = v.tuning || {};
+  const mode = rules.gold_mode || 0;
   const cost = me.recruit_cost;
-  const goldCost = rules.recruit_gold_cost;
-  const withGold = Boolean(rules.recruit_with_gold);
   const cap = S.cfg.recruit_cap;
+  const goldCost = cost + (rules.recruit_gold_premium || 0);
+  const rate = rules.gold_per_fly || 2;
+
   const maxFlies = Math.min(cap, Math.floor(me.flies / cost));
-  const maxGold = withGold ? Math.min(cap, Math.floor(me.gold / goldCost)) : 0;
+  const maxGold = mode === 1 ? Math.min(cap, Math.floor(me.gold / goldCost)) : 0;
+  const maxTrade = mode === 2 ? Math.floor(me.gold / rate) : 0;
 
   const row = el('div', 'form-row');
   const input = el('input');
-  input.type = 'number'; input.min = '0'; input.max = String(maxFlies); input.value = '0';
-  const label = el('label', null, `With flies, ${cost} each (max ${maxFlies})`);
+  input.type = 'number'; input.min = '0'; input.value = '0';
+  input.max = String(mode === 2 ? cap : maxFlies);
+  const label = el('label', null, `With flies, ${cost} each`
+    + (mode === 2 ? '' : ` (max ${maxFlies})`));
   label.appendChild(input);
   row.appendChild(label);
 
   let goldInput = null;
-  if (withGold) {
+  let tradeInput = null;
+  if (mode === 1) {
     goldInput = el('input');
     goldInput.type = 'number'; goldInput.min = '0';
     goldInput.max = String(maxGold); goldInput.value = '0';
     const goldLabel = el('label', null, `With gold, ${goldCost} each (max ${maxGold})`);
-    goldLabel.title = 'A flat price — the happiness band does not apply to it.';
+    goldLabel.title = 'Priced off your happiness band, plus a premium — the same '
+      + 'track that prices flies.';
     goldLabel.appendChild(goldInput);
     row.appendChild(goldLabel);
+  } else if (mode === 2) {
+    tradeInput = el('input');
+    tradeInput.type = 'number'; tradeInput.min = '0';
+    tradeInput.max = String(maxTrade); tradeInput.value = '0';
+    const tradeLabel = el('label', null, `Buy flies, ${rate} gold each (max ${maxTrade})`);
+    tradeLabel.title = 'Converted before you pay, so these flies can buy toads.';
+    tradeLabel.appendChild(tradeInput);
+    row.appendChild(tradeLabel);
   }
 
   const preview = el('span', 'hint');
   const read = () => {
-    const byFlies = Math.max(0, Math.min(maxFlies, parseInt(input.value || '0', 10)));
+    const traded = tradeInput
+      ? Math.max(0, Math.min(maxTrade, parseInt(tradeInput.value || '0', 10))) : 0;
+    const pool = me.flies + traded;
+    const byFlies = Math.max(0, Math.min(
+      mode === 2 ? Math.floor(pool / cost) : maxFlies,
+      parseInt(input.value || '0', 10)));
     const byGold = goldInput
       ? Math.max(0, Math.min(maxGold, parseInt(goldInput.value || '0', 10))) : 0;
-    return { byFlies, byGold, total: byFlies + byGold };
+    return { byFlies, byGold, traded, total: byFlies + byGold };
   };
   const update = () => {
-    const { byFlies, byGold, total } = read();
-    let text = `${total} toads for ${byFlies * cost} flies`;
-    if (byGold) text += ` and ${byGold * goldCost} gold`;
-    text += ` (you hold ${me.flies} flies, ${me.gold} gold, and will need `
-      + `${me.toads + total} flies to feed everyone).`;
-    if (total > cap) text += `  Over the cap of ${cap}.`;
-    preview.textContent = text;
+    const { byFlies, byGold, traded, total } = read();
+    const bits = [];
+    if (byFlies) bits.push(`${byFlies * cost} flies`);
+    if (byGold) bits.push(`${byGold * goldCost} gold`);
+    if (traded) bits.push(`${traded * rate} gold traded for ${traded} flies`);
+    preview.textContent = `${total} toads for ${bits.join(' + ') || 'nothing'}`
+      + ` — you hold ${me.flies} flies and ${me.gold} gold, and will need `
+      + `${me.toads + total} flies to feed everyone.`
+      + (total > cap ? `  Over the cap of ${cap}.` : '');
   };
-  input.addEventListener('input', update);
-  if (goldInput) goldInput.addEventListener('input', update);
+  for (const box of [input, goldInput, tradeInput]) {
+    if (box) box.addEventListener('input', update);
+  }
 
   const go = el('button', 'primary', 'Commit');
   go.onclick = () => {
-    const { byGold, total } = read();
-    send({ type: 'recruit', count: total, gold_count: byGold });
+    const { byGold, traded, total } = read();
+    send({
+      type: 'recruit', count: total,
+      gold_count: byGold, exchange: traded * rate,
+    });
   };
   row.appendChild(go);
   host.appendChild(row);
   host.appendChild(preview);
   update();
   host.appendChild(el('p', 'hint',
-    'Everyone commits secretly and reveals together. Cap is '
-    + S.cfg.recruit_cap + ' toads a round.'));
+    'Everyone commits secretly and reveals together. Cap is ' + cap
+    + ' toads a round.'));
 }
 
 function renderBid(host, title, v, me) {
@@ -1273,9 +1299,20 @@ function renderPlacement(host, title, v, me) {
     + 'happiness loss.'));
 }
 
-function renderFeed(host, title, me) {
+function renderFeed(host, title, me, v) {
   title.textContent = 'Feed your toads';
-  const max = Math.min(me.toads, Math.floor(me.flies / S.cfg.feed_cost));
+  const rules = (v && v.tuning) || {};
+  const rate = rules.gold_per_fly || 2;
+  const canTrade = rules.gold_mode === 2;
+  const traded = canTrade ? Math.min(
+    Math.floor(me.gold / rate),
+    Math.max(0, me.toads - Math.floor(me.flies / S.cfg.feed_cost))) : 0;
+  const max = Math.min(me.toads, Math.floor((me.flies + traded) / S.cfg.feed_cost));
+  if (traded) {
+    host.appendChild(el('p', 'hint',
+      `${traded * rate} gold will be traded for ${traded} flies so that `
+      + `${max} toads can eat.`));
+  }
 
   if (me.austerity_cost !== null && me.austerity_cost !== undefined) {
     const box = el('div', 'austerity');
@@ -1304,7 +1341,10 @@ function renderFeed(host, title, me) {
   };
   input.addEventListener('input', update);
   const go = el('button', 'primary', 'Commit');
-  go.onclick = () => send({ type: 'feed', keep: parseInt(input.value || '0', 10) });
+  go.onclick = () => send({
+    type: 'feed', keep: parseInt(input.value || '0', 10),
+    exchange: traded * rate,
+  });
   row.appendChild(go);
   host.appendChild(row);
   host.appendChild(preview);

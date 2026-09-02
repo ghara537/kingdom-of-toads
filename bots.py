@@ -100,7 +100,13 @@ class Bot:
                     "keep": _me(view)["toads"],
                     "austerity": True,
                 }
-            return {"type": "feed", "keep": self.feed(view)}
+            exchange = self.feed_exchange(view)
+            rate = _rules(view)["gold_per_fly"]
+            return {
+                "type": "feed",
+                "keep": self.feed(view, extra_flies=exchange // rate),
+                "exchange": exchange,
+            }
         raise ValueError(f"no bot decision for phase {phase}")
 
     # -- phase 1 ------------------------------------------------------------
@@ -113,39 +119,45 @@ class Bot:
         return self.recruit_action(view)["count"]
 
     def recruit_action(self, view: dict) -> dict:
-        """Buy toads with flies, with gold, or with both.
+        """Buy toads with flies, with gold, or with flies bought using gold.
 
-        Where a table allows gold recruitment the two prices compete directly:
-        flies move with the happiness band, gold does not, so a player deep in
-        the cheap bands should still pay in flies while an unhappy one is
-        better off paying cash.
+        Mode 1 prices gold off the happiness band plus a premium, so flies are
+        always the cheaper currency and gold is a top-up. Mode 2 buys flies
+        instead, which is worth doing only for what we actually spend.
         """
         me = _me(view)
         rules = _rules(view)
+        mode = rules["gold_mode"]
         fly_price = me["recruit_cost"]
-        gold_price = rules["recruit_gold_cost"]
-        allowed = bool(rules["recruit_with_gold"])
-
-        spendable_flies = max(0, me["flies"] - self._feed_reserve(view))
-        by_flies = spendable_flies // fly_price if fly_price else 0
-        spendable_gold = max(0, me["gold"] - self.auction_purse)
-        by_gold = spendable_gold // gold_price if allowed and gold_price else 0
-
         room = min(self.recruit_appetite, config.RECRUIT_CAP)
-        if fly_price > self.recruit_cost_ceiling and not by_gold:
+        spare_gold = max(0, me["gold"] - self.auction_purse)
+        flies = max(0, me["flies"] - self._feed_reserve(view))
+
+        if fly_price > self.recruit_cost_ceiling or not room:
             return {"type": "recruit", "count": 0, "gold_count": 0}
 
-        # Spend the cheaper currency first, then top up with the other.
-        if fly_price <= gold_price or not allowed:
-            flies_bought = min(room, by_flies)
-            gold_bought = min(room - flies_bought, by_gold)
-        else:
-            gold_bought = min(room, by_gold)
-            flies_bought = min(room - gold_bought, by_flies)
+        if mode == config.GOLD_BUYS_FLIES:
+            rate = rules["gold_per_fly"]
+            reachable = flies + spare_gold // rate
+            count = min(room, reachable // fly_price)
+            # Convert exactly what the shortfall needs, not a fly more.
+            short = max(0, count * fly_price - flies)
+            return {
+                "type": "recruit",
+                "count": count,
+                "gold_count": 0,
+                "exchange": short * rate,
+            }
+
+        by_flies = min(room, flies // fly_price)
+        by_gold = 0
+        if mode == config.GOLD_RECRUITS:
+            gold_price = fly_price + rules["recruit_gold_premium"]
+            by_gold = min(room - by_flies, spare_gold // gold_price)
         return {
             "type": "recruit",
-            "count": flies_bought + gold_bought,
-            "gold_count": gold_bought,
+            "count": by_flies + by_gold,
+            "gold_count": by_gold,
         }
 
     def _feed_reserve(self, view: dict) -> int:
@@ -372,9 +384,26 @@ class Bot:
             return False
         return me["happiness"] - cost >= self.happiness_floor - 2
 
-    def feed(self, view: dict) -> int:
+    def feed_exchange(self, view: dict) -> int:
+        """Gold to turn into flies rather than let toads starve.
+
+        Where a table lets gold buy food, a starving kingdom with a full purse
+        is simply a mistake — this is the only route from gold to survival.
+        """
+        rules = _rules(view)
+        if rules["gold_mode"] != config.GOLD_BUYS_FLIES:
+            return 0
         me = _me(view)
-        affordable = min(me["toads"], me["flies"] // config.FEED_COST)
+        short = max(0, me["toads"] * config.FEED_COST - me["flies"])
+        if not short:
+            return 0
+        rate = rules["gold_per_fly"]
+        return min(short, max(0, me["gold"]) // rate) * rate
+
+    def feed(self, view: dict, extra_flies: int = 0) -> int:
+        me = _me(view)
+        flies = me["flies"] + extra_flies
+        affordable = min(me["toads"], flies // config.FEED_COST)
         if view["round"] < view["rounds"]:
             return affordable
         # Final round: a toad is 2 VP but the fly majority is 5, so starving one
@@ -392,7 +421,7 @@ class Bot:
         }
         best, best_score = affordable, -1
         for keep in range(max(0, affordable - 2), affordable + 1):
-            flies_left = me["flies"] - keep * config.FEED_COST
+            flies_left = flies - keep * config.FEED_COST
             score = keep * scoring["vp_per_toad"]
             if rivals and all(flies_left > r for r in rivals):
                 score += scoring["majorities"][config.FLIES]

@@ -304,22 +304,24 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
         bought = _as_int(action.get("gold_count", 0), "gold_count")
         if bought < 0:
             raise InvalidAction("cannot buy a negative number of toads")
-        if bought and not tuning["recruit_with_gold"]:
-            raise InvalidAction("this table recruits with flies only")
+        if bought and tuning["gold_mode"] != config.GOLD_RECRUITS:
+            raise InvalidAction("this table does not recruit with gold")
         if bought > count:
             raise InvalidAction(
                 f"you asked for {count} toads but would pay gold for {bought}"
             )
-        gold_due = bought * tuning["recruit_gold_cost"]
-        if gold_due > player.gold:
+        exchanged = _validate_exchange(state, player, action)
+        gold_due = bought * config.recruit_gold_cost(player.happiness, tuning)
+        if gold_due + exchanged > player.gold:
             raise InvalidAction(
-                f"{bought} toads costs {gold_due} gold; you hold {player.gold}"
+                f"{bought} toads costs {gold_due} gold; you hold "
+                f"{player.gold - exchanged}"
             )
         cost = (count - bought) * config.recruit_cost(player.happiness)
-        if cost > player.flies:
+        purse = player.flies + exchanged // tuning["gold_per_fly"]
+        if cost > purse:
             raise InvalidAction(
-                f"{count - bought} toads costs {cost} flies; "
-                f"you hold {player.flies}"
+                f"{count - bought} toads costs {cost} flies; you hold {purse}"
             )
         return
 
@@ -368,10 +370,12 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
                     f"{player.toads} toads"
                 )
             return
-        if keep * config.FEED_COST > player.flies:
+        exchanged = _validate_exchange(state, player, action)
+        purse = player.flies + exchanged // state.settings.tuning["gold_per_fly"]
+        if keep * config.FEED_COST > purse:
             raise InvalidAction(
                 f"feeding {keep} toads costs {keep * config.FEED_COST} flies; "
-                f"you hold {player.flies}"
+                f"you hold {purse}"
             )
         return
 
@@ -418,6 +422,46 @@ def _validate_auction_action(
     minimum = state.settings.tuning["auction_min_bid"]
     if amount < minimum:
         raise InvalidAction(f"the minimum bid is {minimum} gold")
+
+
+def _validate_exchange(state: GameState, player: PlayerState, action: dict) -> int:
+    """Check any gold-for-flies conversion attached to this action.
+
+    Returns the gold to be spent. Must be an exact multiple of the rate — a
+    remainder would be silently burned, which is not a thing to do to someone
+    mid-game.
+    """
+    gold = _as_int(action.get("exchange", 0), "exchange")
+    if gold == 0:
+        return 0
+    tuning = state.settings.tuning
+    if tuning["gold_mode"] != config.GOLD_BUYS_FLIES:
+        raise InvalidAction("this table does not exchange gold for flies")
+    if gold < 0:
+        raise InvalidAction("cannot exchange a negative amount of gold")
+    rate = tuning["gold_per_fly"]
+    if gold % rate:
+        raise InvalidAction(f"exchange gold in multiples of {rate}")
+    if gold > player.gold:
+        raise InvalidAction(f"you only hold {player.gold} gold")
+    return gold
+
+
+def _apply_exchange(state: GameState, player: PlayerState, commitment: dict) -> None:
+    gold = commitment.get("exchange", 0)
+    if not gold:
+        return
+    rate = state.settings.tuning["gold_per_fly"]
+    player.gold -= gold
+    player.flies += gold // rate
+    _log(
+        state,
+        "exchange",
+        player=player.id,
+        gold=gold,
+        flies=gold // rate,
+        text=f"{player.name} traded {gold} gold for {gold // rate} flies.",
+    )
 
 
 def _as_int(value: Any, label: str) -> int:
@@ -512,8 +556,9 @@ def _resolve_recruit(state: GameState) -> None:
         commitment = state.commitments[player.id]
         count = commitment["count"]
         bought = commitment.get("gold_count", 0)
+        _apply_exchange(state, player, commitment)
         flies_due = (count - bought) * config.recruit_cost(player.happiness)
-        gold_due = bought * tuning["recruit_gold_cost"]
+        gold_due = bought * config.recruit_gold_cost(player.happiness, tuning)
         player.flies -= flies_due
         player.gold -= gold_due
         player.toads += count
@@ -1041,6 +1086,7 @@ def _resolve_feed(state: GameState) -> None:
     for player in state.players:
         commitment = state.commitments[player.id]
         keep = commitment["keep"]
+        _apply_exchange(state, player, commitment)
         if commitment.get("austerity"):
             # Nobody eats and nobody starves; the kingdom pays in morale.
             cost = austerity_cost(player) or 0

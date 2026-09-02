@@ -72,11 +72,18 @@ RECRUIT_COST_BANDS = (
 
 RECRUIT_CAP = 4                 # per player per round; toad instants bypass it
 
-# Off by default. When switched on, a toad may be bought with gold instead of
-# flies at a flat price that ignores the happiness band — which deliberately
-# breaks the resource separation in DESIGN.md §3, so it is opt-in.
-RECRUIT_WITH_GOLD = 0
-RECRUIT_GOLD_COST = 3
+# What gold may do beyond bidding. Modes 1 and 2 both soften the resource
+# separation DESIGN.md §3 calls strict, so the default keeps it strict.
+GOLD_AUCTION_ONLY = 0     # gold buys property and nothing else
+GOLD_RECRUITS = 1         # gold recruits toads, priced off the happiness band
+GOLD_BUYS_FLIES = 2       # gold converts to flies at a fixed rate
+
+GOLD_MODE = GOLD_AUCTION_ONLY
+# Mode 1: a toad costs this much more in gold than in flies, so the happiness
+# band still drives the price rather than being bypassed by a flat fee.
+RECRUIT_GOLD_PREMIUM = 1
+# Mode 2: gold paid per fly received.
+GOLD_PER_FLY = 2
 
 # ---------------------------------------------------------------------------
 # Phase 2 — auction
@@ -449,6 +456,16 @@ def recruit_cost(happiness: int) -> int:
     raise ValueError(f"happiness {happiness} falls outside every cost band")
 
 
+def recruit_gold_cost(happiness: int, tuning: dict[str, int] | None = None) -> int:
+    """Gold price of one toad in mode 1: the fly price plus a premium.
+
+    Pricing off the band deliberately: a flat fee would let anyone with a purse
+    ignore the happiness track, which is the mechanism the game runs on.
+    """
+    t = tuning or TUNING_DEFAULTS
+    return recruit_cost(happiness) + t["recruit_gold_premium"]
+
+
 def recruit_band(happiness: int) -> tuple[int, int, int]:
     """The (low, high, cost) band containing the given happiness."""
     for band in RECRUIT_COST_BANDS:
@@ -494,14 +511,17 @@ TUNING_FIELDS = (
      f"Where the track starts, {HAPPINESS_MIN}-{HAPPINESS_MAX}.",
      START_HAPPINESS, HAPPINESS_MIN, HAPPINESS_MAX, "start"),
 
-    ("recruit_with_gold", "Pay in gold",
-     "1 allows toads to be bought with gold as well as flies; 0 is flies only. "
-     "Off by default: it bypasses the happiness band entirely.",
-     RECRUIT_WITH_GOLD, 0, 1, "recruit"),
-    ("recruit_gold_cost", "Gold per toad",
-     "Flat price, the same in every happiness band. Does nothing unless "
-     "'Pay in gold' is on.",
-     RECRUIT_GOLD_COST, 1, 30, "recruit"),
+    ("gold_mode", "Gold may",
+     "0: bid at auction only. 1: also recruit toads, priced off your happiness "
+     "band. 2: also convert into flies at a fixed rate.",
+     GOLD_MODE, 0, 2, "recruit"),
+    ("recruit_gold_premium", "Gold premium (mode 1)",
+     "How much dearer a toad is in gold than in flies. At 1 and a band of 3 "
+     "flies, a toad costs 4 gold. Mode 1 only.",
+     RECRUIT_GOLD_PREMIUM, 0, 10, "recruit"),
+    ("gold_per_fly", "Gold per fly (mode 2)",
+     "Gold paid for each fly received. Mode 2 only.",
+     GOLD_PER_FLY, 1, 10, "recruit"),
 
     ("auction_min_bid", "Minimum bid", "The smallest bid that is not a pass.",
      AUCTION_MIN_BID, 1, 30, "auction"),
