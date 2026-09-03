@@ -20,6 +20,7 @@ from pydantic import BaseModel, Field
 import cards as card_lib
 import config
 import engine
+import rules as rules_lib
 import tables as table_lib
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -287,6 +288,27 @@ async def card_catalog():
     }
 
 
+@app.get("/api/rules")
+async def rules_for(code: str | None = None):
+    """The rules as this table actually plays them.
+
+    Without a code you get the defaults; with one you get that table's
+    settings, so the page always describes the game in front of you.
+    """
+    if not code:
+        return rules_lib.build()
+    try:
+        table = store.get(code)
+    except table_lib.TableError as exc:
+        return error(str(exc), 404)
+    return rules_lib.build(
+        tuning=table.tuning,
+        rounds=table.rounds,
+        players=len(table.seats),
+        auction_mode=table.auction_mode,
+    )
+
+
 @app.get("/api/config")
 async def public_config():
     """The handful of constants the UI needs to render and pre-validate."""
@@ -458,6 +480,11 @@ async def index():
 
 @app.get("/t/{code}")
 async def table_page(code: str):
+    return FileResponse(STATIC_DIR / "index.html", headers=NO_CACHE)
+
+
+@app.get("/rules")
+async def rules_page():
     return FileResponse(STATIC_DIR / "index.html", headers=NO_CACHE)
 
 

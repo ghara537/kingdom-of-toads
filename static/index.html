@@ -11,6 +11,7 @@
 <header id="topbar">
   <h1>Kingdom of Toads</h1>
   <div id="status-line"></div>
+  <a id="rules-link" href="/rules" target="_blank" rel="noopener">Rules</a>
   <button id="pause-button" class="ghost" type="button" hidden>Pause</button>
   <div id="keepalive">
     <span id="keepalive-text"></span>
@@ -114,6 +115,15 @@
   <section class="panel log-panel">
     <h2>Log</h2>
     <div id="log"></div>
+  </section>
+</main>
+
+<main id="screen-rules" class="screen" hidden>
+  <section class="panel">
+    <h2 id="rules-title">Rules</h2>
+    <p id="rules-summary" class="hint"></p>
+    <div id="rules-changed"></div>
+    <div id="rules-body"></div>
   </section>
 </main>
 

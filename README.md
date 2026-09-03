@@ -151,6 +151,18 @@ Headless, the simulator takes the same overrides:
 .venv/bin/python simulate.py -n 500 --tune vp_per_toad=2 --tune vp_most_gold=10
 ```
 
+## The rules page
+
+A **Rules** link in the header opens `/rules` in a new tab. From a table it
+carries the code (`/rules?code=ABCDE`) and the text is generated from *that
+table's* settings — the recruitment band table gains a gold column if gold
+recruits, the auction section describes blind or live as appropriate, the
+bonus curve is tabulated round by round for the rounds you are actually
+playing, and anything you changed from the defaults is listed at the top.
+
+It is built by `rules.py` from `config` and the table's tuning, so there is no
+second copy of the rules to drift out of date.
+
 ## The simulator
 
 Bot-only games through the same engine, with no web layer involved.
@@ -195,6 +207,7 @@ bots' base valuation. Re-run it after a tuning pass to refresh the sheet. The
 | `storage.py` | Atomic JSON write-through, one file per table |
 | `server.py` | FastAPI: HTTP, WebSockets, per-seat views, timer sweeper |
 | `static/` | The UI: plain HTML, CSS and JS, no build step |
+| `rules.py` | The rules, written out from a table's own settings |
 | `simulate.py` | Headless harness: bot-only games and the balance report |
 | `export_cards.py` | Writes `cards.csv` from `config.CARD_DEFS` |
 | `test_*.py` | pytest suites for every layer |

@@ -107,9 +107,69 @@ function renderKeepalive() {
     'Send a signal to keep the server from sleeping. It does nothing to the game.';
 }
 
+/* ------------------------------------------------------------------ rules
+ *
+ * Opened in its own tab so it can sit beside the game. The text is built
+ * server-side from the table's own settings, so a table that has changed the
+ * toad's VP or how gold behaves reads rules that say so.
+ */
+
+async function renderRules() {
+  const code = new URLSearchParams(location.search).get('code');
+  const res = await fetch('/api/rules' + (code ? '?code=' + encodeURIComponent(code) : ''));
+  const data = await res.json();
+  showScreen('rules');
+  if (data.error) {
+    $('rules-title').textContent = 'Rules';
+    $('rules-summary').textContent = data.error;
+    return;
+  }
+  document.title = 'Rules — Kingdom of Toads';
+  $('rules-title').textContent = data.title;
+  $('rules-summary').textContent = data.summary;
+
+  const changed = $('rules-changed');
+  changed.innerHTML = '';
+  if (data.changed.length) {
+    changed.appendChild(el('h3', null, 'Changed from the defaults'));
+    const list = el('ul', 'rules-changed-list');
+    for (const c of data.changed) {
+      list.appendChild(el('li', null, `${c.label}: ${c.value} (default ${c.default})`));
+    }
+    changed.appendChild(list);
+  }
+
+  const body = $('rules-body');
+  body.innerHTML = '';
+  for (const section of data.sections) {
+    body.appendChild(el('h3', 'rules-heading', section.heading));
+    for (const block of section.blocks) {
+      if (block.kind === 'p') {
+        body.appendChild(el('p', null, block.text));
+      } else if (block.kind === 'ul') {
+        const list = el('ul');
+        block.items.forEach((i) => list.appendChild(el('li', null, i)));
+        body.appendChild(list);
+      } else if (block.kind === 'table') {
+        const table = el('table', 'scoreboard rules-table');
+        const head = el('tr');
+        block.head.forEach((h) => head.appendChild(el('th', null, h)));
+        table.appendChild(head);
+        for (const row of block.rows) {
+          const tr = el('tr');
+          row.forEach((c) => tr.appendChild(el('td', null, c)));
+          table.appendChild(tr);
+        }
+        body.appendChild(table);
+      }
+    }
+  }
+}
+
 /* ------------------------------------------------------------------ boot */
 
 async function boot() {
+  if (location.pathname === '/rules') return renderRules();
   S.cfg = await (await fetch('/api/config')).json();
   S.catalog = await (await fetch('/api/cards')).json();
   keepaliveInit();
@@ -538,6 +598,7 @@ function render() {
   const t = S.table;
   if (!t) return;
   $('table-code').textContent = 'Table ' + t.code;
+  $('rules-link').href = '/rules?code=' + encodeURIComponent(t.code);
   showScreen(t.status === 'lobby' ? 'lobby' : 'game');
   if (t.status === 'lobby') renderLobby();
   else renderGame();
@@ -546,7 +607,7 @@ function render() {
 }
 
 function showScreen(which) {
-  for (const name of ['home', 'lobby', 'game']) {
+  for (const name of ['home', 'lobby', 'game', 'rules']) {
     $('screen-' + name).hidden = name !== which;
   }
 }

@@ -385,3 +385,73 @@ def test_an_unknown_bot_strategy_is_rejected():
     store = table_lib.TableStore(storage=None)
     with pytest.raises(table_lib.TableError):
         store.create(2, "Host", seat_kinds=[{"index": 1, "kind": "bot", "strategy": "wizard"}])
+
+
+# ---------------------------------------------------------------------------
+# The rules page
+# ---------------------------------------------------------------------------
+
+
+def test_the_rules_describe_the_defaults_without_a_table(client):
+    data = client.get("/api/rules").json()
+    assert data["changed"] == []
+    headings = [s["heading"] for s in data["sections"]]
+    assert "Phase 1 — Recruitment" in headings
+    assert "Scoring" in headings
+    assert "gold bids only" in data["summary"]
+
+
+def test_the_rules_follow_a_tables_own_settings(client):
+    made = create(client, players=3, rounds=8, tuning={
+        "vp_per_toad": 4, "gold_mode": 2, "gold_per_fly": 3,
+        "start_gold": 25, "rest_empty_penalty": 0,
+    })
+    data = client.get(f"/api/rules?code={made['code']}").json()
+
+    assert "3 players" in data["summary"] and "8 rounds" in data["summary"]
+    assert "gold buys flies" in data["summary"]
+    changed = {c["label"]: c["value"] for c in data["changed"]}
+    assert changed["VP per toad"] == 4
+    assert changed["Starting gold"] == 25
+
+    flat = _flatten(data)
+    assert "3 gold each" in flat          # the exchange rate it actually uses
+    assert "4 VP" in flat                 # the toad's value at this table
+    assert "25" in flat                   # the starting purse
+    assert "nobody in Rest" not in flat   # that penalty is switched off here
+
+
+def test_the_rules_track_the_gold_mode(client):
+    recruits = create(client, players=2, tuning={"gold_mode": 1})
+    flat = _flatten(client.get(f"/api/rules?code={recruits['code']}").json())
+    assert "Gold per toad" in flat        # the band table gains a column
+    assert "more than the fly price" in flat
+
+    plain = create(client, players=2)
+    flat = _flatten(client.get(f"/api/rules?code={plain['code']}").json())
+    assert "paid for in flies only" in flat
+    assert "Gold per toad" not in flat
+
+
+def test_an_unknown_table_is_reported_not_guessed(client):
+    assert client.get("/api/rules?code=ZZZZZ").status_code == 404
+
+
+def test_the_rules_page_is_served(client):
+    assert b"Kingdom of Toads" in client.get("/rules").content
+
+
+def _flatten(data) -> str:
+    parts = [data["summary"]]
+    for section in data["sections"]:
+        parts.append(section["heading"])
+        for block in section["blocks"]:
+            if block["kind"] == "p":
+                parts.append(block["text"])
+            elif block["kind"] == "ul":
+                parts.extend(block["items"])
+            else:
+                parts.extend(block["head"])
+                for row in block["rows"]:
+                    parts.extend(row)
+    return " | ".join(parts)
