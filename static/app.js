@@ -936,6 +936,16 @@ function cardTipInit() {
   });
   document.addEventListener('focusout', hideCardTip);
   window.addEventListener('scroll', hideCardTip, { passive: true });
+
+  // Touch has no mouseout: a tap elsewhere dismisses the tip, and so does
+  // scrolling any panel (the phone layout scrolls panels, not the window).
+  // Mouse input never reaches either handler.
+  document.addEventListener('pointerdown', (e) => {
+    if (e.pointerType === 'touch' && !e.target.closest('[data-card]')) hideCardTip();
+  }, { passive: true });
+  if (window.matchMedia('(pointer: coarse)').matches) {
+    document.addEventListener('scroll', hideCardTip, { capture: true, passive: true });
+  }
 }
 
 function renderMyCards(me, v) {

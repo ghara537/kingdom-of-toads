@@ -293,3 +293,123 @@ button.danger { background: var(--warn); color: #fff; border-color: var(--warn);
 
 #pause-button[data-paused="true"] { border-color: var(--warn); color: var(--warn); font-weight: 700; }
 #status-line .paused { color: var(--warn); font-weight: 700; }
+
+/* ============================================================ phones
+ *
+ * Everything below is gated on a coarse (touch) pointer, so a desktop browser
+ * never matches it however small its window is dragged. The first block fixes
+ * touch behaviour on any phone; the second lays the game out for a phone held
+ * sideways, where height is the scarce thing.
+ */
+
+@media (pointer: coarse) and (max-height: 500px), (pointer: coarse) and (max-width: 500px) {
+  /* iOS inflates text when rotated to landscape unless told not to. */
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+  /* Below 16px, iOS zooms the page when an input takes focus. */
+  input, select { font-size: 16px; }
+  /* iOS only delivers taps to elements that look clickable, and the card
+     tooltip hangs off those taps. */
+  [data-card] { cursor: pointer; }
+  #card-tip { width: 230px; max-height: 80vh; overflow-y: auto; }
+  .vote-card { padding: 12px 14px; }
+}
+
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 500px) {
+  body { font-size: 13px; }
+  h2 { font-size: 12px; margin-bottom: 6px; }
+  h3 { font-size: 11px; margin: 10px 0 4px; }
+
+  /* ---- header: one short line, clear of the notch */
+  #topbar {
+    gap: 10px; min-height: 40px;
+    padding: 4px max(10px, env(safe-area-inset-right)) 4px max(10px, env(safe-area-inset-left));
+  }
+  #topbar h1 { font-size: 14px; white-space: nowrap; }
+  #status-line {
+    min-width: 0; font-size: 12px; white-space: nowrap;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  #status-line::-webkit-scrollbar { display: none; }
+  #rules-link { padding: 5px 8px; font-size: 12px; }
+  #keepalive { gap: 6px; font-size: 11px; }
+  #table-code { font-size: 12px; }
+
+  .screen {
+    padding: 8px max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+  }
+  .panel { padding: 10px; margin-bottom: 8px; }
+  .form-row { gap: 10px; }
+
+  /* Fingers, not cursors. */
+  button { min-height: 34px; }
+  button.tiny { min-height: 26px; }
+  .area .stepper button { min-width: 38px; padding: 4px 10px; }
+
+  /* ---- in a game: the page stops scrolling and the three columns plus the
+     log share the screen, each scrolling on its own, so the action panel
+     stays in view while you read the table. */
+  body:has(#screen-game:not([hidden])) {
+    height: 100vh; height: 100dvh; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  body:has(#screen-game:not([hidden])) #topbar h1 { display: none; }
+  /* The round and timer matter most up here; the table code is in the URL,
+     and the keep-awake readout only speaks up once the server is dozing. */
+  body:has(#screen-game:not([hidden])) #table-code,
+  body:has(#screen-game:not([hidden])) #keepalive:not(.idle):not(.waking) #keepalive-text { display: none; }
+  #topbar > :not(#status-line) { flex-shrink: 0; }
+  .opponent .head { gap: 4px; flex-wrap: wrap; }
+  #topbar button, #keepalive button { min-height: 30px; padding: 3px 8px; font-size: 12px; }
+
+  #screen-game:not([hidden]) {
+    flex: 1; min-height: 0; width: 100%; max-width: none; margin: 0;
+    display: grid; gap: 6px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1.7fr) minmax(0, 1fr);
+    padding-top: 6px;
+  }
+  #screen-game .board { display: contents; }
+  #screen-game .panel {
+    margin: 0; min-height: 0; overflow-y: auto;
+    overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  }
+  #screen-game .col-you { grid-column: 1; grid-row: 1 / span 2; }
+  #screen-game .col-action { grid-column: 2; grid-row: 1 / span 2; }
+  #screen-game .col-others { grid-column: 3; grid-row: 1; }
+  #screen-game .log-panel { grid-column: 3; grid-row: 2; }
+  #log { max-height: none; font-size: 12px; }
+
+  /* ---- denser pieces to fit a third of a phone */
+  .resources { gap: 4px; }
+  .res { padding: 3px 2px; min-width: 0; overflow: hidden; }
+  .res .v { font-size: 17px; }
+  .res .k { font-size: 8px; letter-spacing: 0; }
+
+  .track { margin: 8px 0 2px; }
+  .track-cells .cell { height: 18px; font-size: 8px; }
+  .cell.here { font-size: 10px; }
+  .track-legend { font-size: 9px; }
+  .track-caption { font-size: 12px; }
+
+  .mat { gap: 5px; }
+  .area { padding: 5px 6px; }
+  .area .name { font-size: 11px; }
+  .area .count { font-size: 20px; }
+  .area .rate, .area .bonus { font-size: 11px; }
+
+  .card-chip { padding: 4px 6px; font-size: 11px; }
+
+  .slate { gap: 6px; margin: 6px 0; }
+  .slate-card { flex: 1 1 130px; width: auto; min-width: 0; padding: 6px; font-size: 11px; }
+  .slate-card .title { font-size: 12px; }
+  .slate-card .text { min-height: 0; }
+
+  .opponent { padding: 6px 8px; margin-bottom: 6px; }
+  .opponent .stats { flex-wrap: wrap; gap: 4px 8px; font-size: 12px; }
+
+  .placement-summary { font-size: 12px; }
+  .scoreboard th, .scoreboard td { padding: 4px 5px; font-size: 12px; }
+
+  #vote-overlay { bottom: max(8px, env(safe-area-inset-bottom)); }
+  #vote-cards { max-height: 80vh; }
+}

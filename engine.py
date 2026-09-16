@@ -48,6 +48,7 @@ RULINGS = """
 PHASE_RECRUIT = "recruit"
 PHASE_AUCTION = "auction"
 PHASE_PLACEMENT = "placement"
+PHASE_TRIBUTE = "tribute"
 PHASE_FEED = "feed"
 PHASE_FINISHED = "finished"
 
@@ -136,6 +137,9 @@ class GameState:
     upcoming: list[str] = field(default_factory=list)
     removed: list[str] = field(default_factory=list)     # left the game
     auction: AuctionState | None = None
+    # Set while a war's losers are choosing what to pay with:
+    # {"winner": pid, "amount": n, "owed": [pid, ...]}
+    tribute: dict[str, Any] | None = None
     # Hidden commitments for the phase in progress, keyed by player id.
     commitments: dict[str, Any] = field(default_factory=dict)
     log: list[dict] = field(default_factory=list)
@@ -220,6 +224,9 @@ def pending_players(state: GameState) -> list[str]:
     """Seats that still owe a decision before the phase can resolve."""
     if state.finished:
         return []
+    if state.phase == PHASE_TRIBUTE:
+        owed = (state.tribute or {}).get("owed", [])
+        return [p for p in owed if p not in state.commitments]
     if state.phase in (PHASE_RECRUIT, PHASE_PLACEMENT, PHASE_FEED):
         return [p.id for p in state.players if p.id not in state.commitments]
     if state.phase == PHASE_AUCTION:
@@ -273,6 +280,12 @@ def submit_action(state: GameState, player_id: str, action: dict) -> GameState:
     Raises InvalidAction — leaving the caller's state untouched — if the action
     is not legal right now. Resolves phases as soon as everyone has committed.
     """
+    if action.get("type") == "exchange":
+        gold = validate_exchange(state, player_id, action)
+        nxt = copy.deepcopy(state)
+        _apply_exchange(nxt, nxt.player(player_id), gold)
+        return nxt
+
     validate_action(state, player_id, action)
     nxt = copy.deepcopy(state)
     _record(nxt, player_id, action)
@@ -310,18 +323,16 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
             raise InvalidAction(
                 f"you asked for {count} toads but would pay gold for {bought}"
             )
-        exchanged = _validate_exchange(state, player, action)
         gold_due = bought * config.recruit_gold_cost(player.happiness, tuning)
-        if gold_due + exchanged > player.gold:
+        if gold_due > player.gold:
             raise InvalidAction(
-                f"{bought} toads costs {gold_due} gold; you hold "
-                f"{player.gold - exchanged}"
+                f"{bought} toads costs {gold_due} gold; you hold {player.gold}"
             )
         cost = (count - bought) * config.recruit_cost(player.happiness)
-        purse = player.flies + exchanged // tuning["gold_per_fly"]
-        if cost > purse:
+        if cost > player.flies:
             raise InvalidAction(
-                f"{count - bought} toads costs {cost} flies; you hold {purse}"
+                f"{count - bought} toads costs {cost} flies; you hold "
+                f"{player.flies}"
             )
         return
 
@@ -347,9 +358,17 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
             raise InvalidAction(
                 f"you must place exactly {player.toads} toads, not {total}"
             )
-        tribute = action.get("tribute", config.GOLD)
-        if tribute not in (config.GOLD, config.FLIES):
-            raise InvalidAction("tribute must be paid in gold or flies")
+        return
+
+    if state.phase == PHASE_TRIBUTE:
+        if kind != "tribute":
+            raise InvalidAction("expected a tribute action")
+        resource = action.get("resource")
+        if resource not in tribute_options(player):
+            raise InvalidAction(
+                "pay with something you actually hold: "
+                + (", ".join(tribute_options(player)) or "you hold nothing")
+            )
         return
 
     if state.phase == PHASE_FEED:
@@ -370,12 +389,10 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
                     f"{player.toads} toads"
                 )
             return
-        exchanged = _validate_exchange(state, player, action)
-        purse = player.flies + exchanged // state.settings.tuning["gold_per_fly"]
-        if keep * config.FEED_COST > purse:
+        if keep * config.FEED_COST > player.flies:
             raise InvalidAction(
                 f"feeding {keep} toads costs {keep * config.FEED_COST} flies; "
-                f"you hold {purse}"
+                f"you hold {player.flies}"
             )
         return
 
@@ -424,33 +441,38 @@ def _validate_auction_action(
         raise InvalidAction(f"the minimum bid is {minimum} gold")
 
 
-def _validate_exchange(state: GameState, player: PlayerState, action: dict) -> int:
-    """Check any gold-for-flies conversion attached to this action.
+def validate_exchange(state: GameState, player_id: str, action: dict) -> int:
+    """Check a standalone gold-for-flies trade. Returns the gold to spend.
 
-    Returns the gold to be spent. Must be an exact multiple of the rate — a
-    remainder would be silently burned, which is not a thing to do to someone
-    mid-game.
+    Legal in any phase and whether or not you have already committed: it is
+    your own purse, and holding the option open is the point of the setting.
     """
-    gold = _as_int(action.get("exchange", 0), "exchange")
-    if gold == 0:
-        return 0
+    player = state.player(player_id)
     tuning = state.settings.tuning
     if tuning["gold_mode"] != config.GOLD_BUYS_FLIES:
         raise InvalidAction("this table does not exchange gold for flies")
-    if gold < 0:
-        raise InvalidAction("cannot exchange a negative amount of gold")
+    gold = _as_int(action.get("gold"), "gold")
+    if gold <= 0:
+        raise InvalidAction("nothing to trade")
     rate = tuning["gold_per_fly"]
     if gold % rate:
-        raise InvalidAction(f"exchange gold in multiples of {rate}")
+        raise InvalidAction(f"trade gold in multiples of {rate}")
     if gold > player.gold:
         raise InvalidAction(f"you only hold {player.gold} gold")
+
+    # A bid already committed this phase still has to be payable.
+    committed = state.commitments.get(player_id) or {}
+    if committed.get("type") == "bid":
+        promised = committed.get("amount", 0)
+        if player.gold - gold < promised:
+            raise InvalidAction(
+                f"you have {promised} gold committed to a bid; trading that "
+                "much would leave you unable to pay it"
+            )
     return gold
 
 
-def _apply_exchange(state: GameState, player: PlayerState, commitment: dict) -> None:
-    gold = commitment.get("exchange", 0)
-    if not gold:
-        return
+def _apply_exchange(state: GameState, player: PlayerState, gold: int) -> None:
     rate = state.settings.tuning["gold_per_fly"]
     player.gold -= gold
     player.flies += gold // rate
@@ -499,6 +521,11 @@ def default_action(state: GameState, player_id: str) -> dict:
         return {"type": "bid", "amount": 0}
     if state.phase == PHASE_PLACEMENT:
         return {"type": "place", "placement": {config.FIELDS: player.toads}}
+    if state.phase == PHASE_TRIBUTE:
+        options = tribute_options(player)
+        # Whichever pile is deeper, so the default costs the least.
+        best = max(options, key=lambda r: getattr(player, r)) if options else config.GOLD
+        return {"type": "tribute", "resource": best}
     if state.phase == PHASE_FEED:
         return {"type": "feed", "keep": min(player.toads, player.flies // config.FEED_COST)}
     raise InvalidAction(f"no default action in phase {state.phase}")
@@ -540,6 +567,8 @@ def _advance(state: GameState) -> GameState:
             _resolve_auction_step(state)
         elif state.phase == PHASE_PLACEMENT:
             _resolve_placement(state)
+        elif state.phase == PHASE_TRIBUTE:
+            _resolve_tribute(state)
         elif state.phase == PHASE_FEED:
             _resolve_feed(state)
         else:  # pragma: no cover - unreachable
@@ -556,7 +585,6 @@ def _resolve_recruit(state: GameState) -> None:
         commitment = state.commitments[player.id]
         count = commitment["count"]
         bought = commitment.get("gold_count", 0)
-        _apply_exchange(state, player, commitment)
         flies_due = (count - bought) * config.recruit_cost(player.happiness)
         gold_due = bought * config.recruit_gold_cost(player.happiness, tuning)
         player.flies -= flies_due
@@ -984,28 +1012,23 @@ def _resolve_placement(state: GameState) -> None:
         winner.war_tokens.append(vp)
         # (f) every other player pays, but only because there was a winner
         tribute = tuning["war_tribute"]
-        spoils: dict[str, dict[str, int]] = {}
+        asked: list[str] = []
         for player in state.players:
             if player.id == war_winner:
                 continue
             happiness[player.id] -= config.WAR_LOSS_PENALTY
-            if tribute:
-                choice = state.commitments[player.id].get("tribute", config.GOLD)
-                paid = _pay_tribute(player, winner, tribute, choice)
-                if paid:
-                    spoils[player.name] = paid
-        if spoils:
-            detail = ", ".join(
-                f"{name} {'/'.join(f'{n} {r}' for r, n in paid.items())}"
-                for name, paid in spoils.items()
-            )
-            _log(
-                state,
-                "tribute",
-                player=war_winner,
-                spoils={k: dict(v) for k, v in spoils.items()},
-                text=f"Tribute to {winner.name}: {detail}.",
-            )
+            if not tribute:
+                continue
+            options = tribute_options(player)
+            if len(options) > 1:
+                # A real choice, so it is theirs to make once the war is known.
+                asked.append(player.id)
+            elif options:
+                _settle_tribute(state, player, winner, tribute, options[0])
+        if asked:
+            state.tribute = {
+                "winner": war_winner, "amount": tribute, "owed": asked,
+            }
         _log(
             state,
             "war",
@@ -1021,6 +1044,41 @@ def _resolve_placement(state: GameState) -> None:
     for player in state.players:
         player.happiness = config.clamp_happiness(happiness[player.id])
 
+    state.commitments = {}
+    state.phase = PHASE_TRIBUTE if state.tribute else PHASE_FEED
+
+
+def tribute_options(player: PlayerState) -> list[str]:
+    """Resources this player actually holds, and so could pay with."""
+    return [r for r in (config.GOLD, config.FLIES) if getattr(player, r) > 0]
+
+
+def _settle_tribute(
+    state: GameState, payer: PlayerState, winner: PlayerState,
+    amount: int, choice: str,
+) -> None:
+    paid = _pay_tribute(payer, winner, amount, choice)
+    if not paid:
+        return
+    detail = " and ".join(f"{n} {r}" for r, n in paid.items())
+    _log(
+        state,
+        "tribute",
+        player=payer.id,
+        to=winner.id,
+        paid=dict(paid),
+        text=f"{payer.name} pays {winner.name} {detail}.",
+    )
+
+
+def _resolve_tribute(state: GameState) -> None:
+    """Collect from the losers who had a choice about how to pay."""
+    bill = state.tribute or {}
+    winner = state.player(bill["winner"])
+    for pid in bill.get("owed", []):
+        choice = state.commitments[pid]["resource"]
+        _settle_tribute(state, state.player(pid), winner, bill["amount"], choice)
+    state.tribute = None
     state.commitments = {}
     state.phase = PHASE_FEED
 
@@ -1086,7 +1144,6 @@ def _resolve_feed(state: GameState) -> None:
     for player in state.players:
         commitment = state.commitments[player.id]
         keep = commitment["keep"]
-        _apply_exchange(state, player, commitment)
         if commitment.get("austerity"):
             # Nobody eats and nobody starves; the kingdom pays in morale.
             cost = austerity_cost(player) or 0
@@ -1263,6 +1320,7 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
                 "waiting_on": p.id in waiting,
                 "can_bid": _eligible_to_bid(state, p),
                 "austerity_cost": austerity_cost(p),
+                "tribute_options": tribute_options(p),
             }
         )
 
@@ -1297,6 +1355,7 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
             "vp_per_toad": tuning["vp_per_toad"],
             "majorities": config.end_majorities(tuning),
         },
+        "tribute": copy.deepcopy(state.tribute),
         "log": list(state.log),
         "projected_scores": score(state)["totals"],
         "scores": copy.deepcopy(state.scores),
@@ -1360,6 +1419,7 @@ def deserialize(data: dict[str, Any]) -> GameState:
         upcoming=list(data.get("upcoming", [])),
         removed=list(data["removed"]),
         auction=AuctionState(**auction) if auction else None,
+        tribute=copy.deepcopy(data.get("tribute")),
         commitments=copy.deepcopy(data["commitments"]),
         log=copy.deepcopy(data["log"]),
         scores=copy.deepcopy(data.get("scores")),

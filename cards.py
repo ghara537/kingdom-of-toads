@@ -84,7 +84,10 @@ class Card:
             gate = ""
             if self.requirement:
                 area, minimum = self.requirement
-                gate = f"{minimum}+ in {area.title()}: "
+                gate = (
+                    f"At least {minimum} "
+                    f"{'toad' if minimum == 1 else 'toads'} in {area.title()}: "
+                )
             # Strength is a standing modifier, not a per-round payout.
             cadence = "" if kind == config.MILITARY_STRENGTH else " each round"
             return f"{gate}+{amount} {_amount_label(kind, amount)}{cadence}"
