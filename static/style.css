@@ -291,6 +291,12 @@ table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-tr
 .vote-card.subject { border-top-color: var(--gold); }
 button.danger { background: var(--warn); color: #fff; border-color: var(--warn); }
 
+#leave-button { border-color: var(--line); }
+#leave-button:hover { border-color: var(--warn); color: var(--warn); }
+
+/* Phone only: shown by the phone block when the mat moves to the middle. */
+#placement-counter { display: none; }
+
 #pause-button[data-paused="true"] { border-color: var(--warn); color: var(--warn); font-weight: 700; }
 #status-line .paused { color: var(--warn); font-weight: 700; }
 
@@ -466,6 +472,25 @@ button.danger { background: var(--warn); color: #fff; border-color: var(--warn);
   .scoreboard th, .scoreboard td { padding: 4px 5px; font-size: 12px; }
 
   #vote-overlay { bottom: max(8px, env(safe-area-inset-bottom)); }
+
+  /* ---- the board follows the phase (see arrangeForPhone in app.js) */
+  #mat-heading { display: none; }
+  body:not([data-phase="placement"]) #my-mat { display: none; }
+  .col-action #my-mat { margin-bottom: 8px; }
+  .col-action .placement-summary, .col-action .placement-hint { display: none; }
+
+  #placement-counter:not(:empty) {
+    display: flex; align-items: baseline; gap: 8px;
+    margin: 8px 0 0; padding: 6px 8px;
+    border: 1px solid var(--line); border-radius: 5px; border-left: 4px solid var(--toads);
+  }
+  #placement-counter .counter-value { font: 700 24px/1 ui-monospace, monospace; color: var(--toads); }
+  #placement-counter .counter-value.done { color: var(--ok); }
+  #placement-counter .counter-label { font-size: 12px; color: var(--muted); }
+
+  .col-you #auction-panel h3 { margin-top: 10px; }
+  .col-you #auction-panel .slate { flex-direction: column; flex-wrap: nowrap; }
+  .col-you #auction-panel .slate-card { flex: none; }
 
   #toasts { top: 44px; padding: 0 max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left)); gap: 4px; }
   .toast { padding: 6px 10px; width: 520px; }

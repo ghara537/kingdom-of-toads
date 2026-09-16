@@ -605,7 +605,22 @@ function render() {
   if (t.status === 'lobby') renderLobby();
   else renderGame();
   renderPause();
+  renderLeave();
   renderVotes();
+}
+
+/* Once the game is over there is nothing left to wait for. Leaving just goes
+ * back to the home page: the seat token stays saved, so the table link still
+ * reopens the final score. */
+function renderLeave() {
+  const btn = $('leave-button');
+  btn.hidden = !(S.table && S.table.status === 'finished');
+  btn.onclick = () => {
+    S.gone = true;
+    clearTimeout(S.retry);
+    if (S.ws) { try { S.ws.close(); } catch (e) { /* ignore */ } }
+    location.href = '/';
+  };
 }
 
 function showScreen(which) {
@@ -668,7 +683,47 @@ function renderGame() {
   renderAuction(v);
   renderAction(v, me);
   renderLog(v);
+  arrangeForPhone(v);
 }
+
+/* ---------------------------------------------------------- phone layout
+ *
+ * A phone on its side has three short columns, so the board rearranges itself
+ * around whatever the phase asks of you. Same query as the CSS phone block —
+ * a desktop never matches it, and there everything stays where the HTML puts it.
+ *
+ *   auction    the slate moves under your resources on the left; the bid form
+ *              has the middle to itself
+ *   placement  the mat moves to the middle, where you place; the left column
+ *              counts the toads still to place
+ */
+const PHONE = window.matchMedia(
+  '(pointer: coarse) and (orientation: landscape) and (max-height: 500px)');
+
+function isPhone() {
+  return PHONE.matches;
+}
+
+function moveAfter(anchor, node) {
+  // Only touch the DOM when something actually moves: re-inserting a node
+  // resets its panel's scroll and drops focus from the button you just tapped.
+  if (anchor.nextElementSibling !== node) anchor.after(node);
+}
+
+function arrangeForPhone(v) {
+  const phone = isPhone();
+  document.body.dataset.phase = v.phase;
+  const matInMiddle = phone && v.phase === 'placement';
+  // Below the Commit buttons, so they stay on screen above the mat.
+  moveAfter(matInMiddle ? $('action-panel') : $('mat-heading'), $('my-mat'));
+  moveAfter(phone && v.phase === 'auction' ? $('my-resources')
+    : (matInMiddle ? $('my-mat') : $('action-panel')), $('auction-panel'));
+}
+
+PHONE.addEventListener('change', () => {
+  S.actionSig = null;
+  renderGame();
+});
 
 function renderStatus(v) {
   const names = (ids) => ids.map((id) => nameOf(v, id)).join(', ');
@@ -727,8 +782,8 @@ function renderResources(me, v) {
   const box = $('my-resources');
   box.innerHTML = '';
   const items = [
-    ['flies', 'flies', me.flies], ['gold', 'gold', me.gold],
-    ['toads', 'toads', me.toads], ['happiness', 'happy', me.happiness],
+    ['toads', 'toads', me.toads], ['flies', 'flies', me.flies],
+    ['gold', 'gold', me.gold], ['happiness', 'happy', me.happiness],
   ];
   for (const [cls, label, value] of items) {
     const d = el('div', 'res ' + cls);
@@ -817,6 +872,8 @@ function renderMat(me, v) {
     military: `War token <b>${v.bonuses.war_token_vp}</b> VP`,
   };
 
+  renderPlacementCounter(me, v, editable);
+
   for (const area of ['fields', 'mine', 'military', 'rest']) {
     const box = el('div', 'area ' + area);
     box.appendChild(el('div', 'name', AREA_LABEL[area]));
@@ -850,6 +907,23 @@ function renderMat(me, v) {
     }
     host.appendChild(box);
   }
+}
+
+/* Phone only (CSS hides it elsewhere): with the mat moved to the middle, the
+ * left column keeps count of the toads still to place. */
+function renderPlacementCounter(me, v, editable) {
+  const host = $('placement-counter');
+  host.innerHTML = '';
+  if (v.phase !== 'placement') return;
+  if (!editable) {
+    host.appendChild(el('div', 'counter-label', 'Placement locked in'));
+    return;
+  }
+  const placed = Object.values(S.draft).reduce((a, b) => a + b, 0);
+  const left = me.toads - placed;
+  host.appendChild(el('div', 'counter-value' + (left ? '' : ' done'), String(left)));
+  host.appendChild(el('div', 'counter-label',
+    left ? `of ${me.toads} toads left to place` : `all ${me.toads} toads placed`));
 }
 
 function cardChip(id) {
@@ -1001,9 +1075,9 @@ function renderOpponents(v) {
     box.appendChild(head);
 
     const stats = el('div', 'stats');
+    stats.appendChild(el('span', 't', p.toads + ' toad'));
     stats.appendChild(el('span', 'f', p.flies + ' fly'));
     stats.appendChild(el('span', 'g', p.gold + ' gold'));
-    stats.appendChild(el('span', 't', p.toads + ' toad'));
     stats.appendChild(el('span', 'h', p.happiness + ' hap'));
     stats.appendChild(el('span', 'vp', v.projected_scores[pid] + ' VP'));
     box.appendChild(stats);
@@ -1046,7 +1120,11 @@ function renderAuction(v) {
   host.appendChild(head);
 
   const row = el('div', 'slate');
-  a.slate.forEach((entry, i) => {
+  // On a phone the slate is a column beside the bid form: the card on the
+  // block goes first, and settled cards cycle round to the bottom.
+  const order = a.slate.map((entry, i) => [entry, i]);
+  if (isPhone()) order.push(...order.splice(0, Math.min(a.index, order.length)));
+  order.forEach(([entry, i]) => {
     const c = S.catalog[entry.card] || { name: entry.card, text: '', vp: 0, group: '' };
     const box = el('div', 'slate-card '
       + (i === a.index ? 'current' : '')
@@ -1347,7 +1425,7 @@ function renderPlacement(host, title, v, me) {
   };
   row.appendChild(allFields); row.appendChild(clear);
   host.appendChild(row);
-  host.appendChild(el('p', 'hint',
+  host.appendChild(el('p', 'hint placement-hint',
     'Ties award no bonus at all — matching a rival exactly is the worst result '
     + 'for both of you, except in Military where a tie also spares the table its '
     + 'happiness loss.'));
