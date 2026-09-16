@@ -220,9 +220,9 @@ def _placement(t: dict, rounds: int) -> dict:
     if t["war_tribute"]:
         war.append(
             f"Every other player also hands the winner {t['war_tribute']} gold or "
-            "flies, their choice which, declared with their placement before the "
-            "war resolves. Short on the resource you chose and the balance comes "
-            "out of the other."
+            "flies, their choice which, made after the war is decided and the "
+            "round's income is in. Short on the resource you chose and the "
+            "balance comes out of the other."
         )
     war.append(
         "A tied war awards no token and costs nobody anything — matching the "

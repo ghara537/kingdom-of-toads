@@ -113,7 +113,7 @@
 
   </div>
   <section class="panel log-panel">
-    <h2>Log</h2>
+    <h2>Log <button id="results-reopen" class="ghost tiny" type="button" hidden>Last placement results</button></h2>
     <div id="log"></div>
   </section>
 </main>
@@ -129,6 +129,12 @@
 
 <div id="vote-overlay" hidden>
   <div id="vote-cards"></div>
+</div>
+
+<div id="toasts" aria-live="polite"></div>
+
+<div id="results-overlay" hidden>
+  <div id="results-card" role="dialog" aria-modal="true" aria-labelledby="results-title"></div>
 </div>
 
 <div id="card-tip" hidden role="tooltip"></div>

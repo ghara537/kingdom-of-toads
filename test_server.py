@@ -275,6 +275,8 @@ def _simple_action(view):
         return {"type": "bid", "amount": 0}
     if phase == engine.PHASE_PLACEMENT:
         return {"type": "place", "placement": {"fields": me["toads"]}}
+    if phase == engine.PHASE_TRIBUTE:
+        return {"type": "tribute", "resource": me["tribute_options"][0]}
     return {"type": "feed", "keep": min(me["toads"], me["flies"])}
 
 

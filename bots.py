@@ -88,11 +88,9 @@ class Bot:
         if phase == engine.PHASE_AUCTION:
             return self.auction(view)
         if phase == engine.PHASE_PLACEMENT:
-            return {
-                "type": "place",
-                "placement": self.place(view),
-                "tribute": self.tribute(view),
-            }
+            return {"type": "place", "placement": self.place(view)}
+        if phase == engine.PHASE_TRIBUTE:
+            return {"type": "tribute", "resource": self.tribute(view)}
         if phase == engine.PHASE_FEED:
             if self.use_austerity(view):
                 return {
@@ -287,8 +285,8 @@ class Bot:
     def tribute(self, view: dict) -> str:
         """Which resource to hand over if we lose the war.
 
-        Declared before the war resolves, so it is a standing preference:
-        pay out of whichever pile is deeper.
+        Asked after the war, with this round's income already counted: pay
+        out of whichever pile is deeper.
         """
         me = _me(view)
         return config.GOLD if me["gold"] >= me["flies"] else config.FLIES

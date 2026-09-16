@@ -997,10 +997,17 @@ def test_war_losers_pay_tribute_to_the_winner():
     for p in state.players:
         p.toads = 2
     state = commit_all(state, {
-        "p1": place(military=2),
-        "p2": {**place(fields=2), "tribute": config.GOLD},
-        "p3": {**place(fields=2), "tribute": config.FLIES},
+        "p1": place(military=2), "p2": place(fields=2), "p3": place(fields=2),
     })
+    # The choice comes after the war, with the harvest already in hand.
+    assert state.phase == engine.PHASE_TRIBUTE
+    assert sorted(state.tribute["owed"]) == ["p2", "p3"]
+    assert state.player("p3").flies == config.START_FLIES + 4
+    state = commit_all(state, {
+        "p2": {"type": "tribute", "resource": config.GOLD},
+        "p3": {"type": "tribute", "resource": config.FLIES},
+    })
+    assert state.phase == engine.PHASE_FEED
     winner, gold_payer, fly_payer = (state.player(p) for p in ("p1", "p2", "p3"))
     assert gold_payer.gold == config.START_GOLD - 1
     assert fly_payer.flies == config.START_FLIES + 4 - 1     # harvest, then pay
@@ -1021,21 +1028,30 @@ def test_a_tied_war_collects_no_tribute():
     assert [p.gold for p in state.players] == [config.START_GOLD] * 3
 
 
-def test_an_empty_purse_cannot_dodge_the_tribute():
-    """Choosing gold you do not have pays out of flies instead."""
+def test_a_loser_with_only_one_resource_pays_without_being_asked():
+    state = make_game(2, tuning={"rest_empty_penalty": 0, "war_tribute": 2})
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 2
+    state.player("p2").gold = 0
+    state = commit_all(state, {"p1": place(military=2), "p2": place(fields=2)})
+    assert state.phase == engine.PHASE_FEED
+    loser, winner = state.player("p2"), state.player("p1")
+    # 4 flies harvested, +2 for the uncontested Fields majority, 2 in tribute.
+    assert loser.flies == config.START_FLIES + 4 + 2 - 2
+    assert winner.flies == config.START_FLIES + 2
+
+
+def test_a_short_purse_pays_the_balance_from_the_other_pile():
     state = make_game(2, tuning={"rest_empty_penalty": 0, "war_tribute": 2})
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
         p.toads = 2
     state.player("p2").gold = 1        # one short of the bill
-    state = commit_all(state, {
-        "p1": place(military=2),
-        "p2": {**place(fields=2), "tribute": config.GOLD},
-    })
+    state = commit_all(state, {"p1": place(military=2), "p2": place(fields=2)})
+    state = commit_all(state, {"p2": {"type": "tribute", "resource": config.GOLD}})
     loser, winner = state.player("p2"), state.player("p1")
     assert loser.gold == 0
-    # 4 flies harvested, +2 for the uncontested Fields majority, 1 taken as the
-    # part of the tribute the purse could not cover.
     assert loser.flies == config.START_FLIES + 4 + 2 - 1
     assert (winner.gold, winner.flies) == (config.START_GOLD + 1, config.START_FLIES + 1)
 
@@ -1054,18 +1070,35 @@ def test_a_player_who_holds_nothing_pays_nothing():
 
 
 def test_the_tribute_choice_is_validated():
-    state = make_game(2)
+    state = make_game(2, tuning={"rest_empty_penalty": 0})
     set_phase(state, engine.PHASE_PLACEMENT)
     for p in state.players:
         p.toads = 2
+    state = commit_all(state, {"p1": place(military=2), "p2": place(fields=2)})
+    assert state.phase == engine.PHASE_TRIBUTE
     with pytest.raises(engine.InvalidAction) as exc:
-        engine.submit_action(
-            state, "p1", {**place(fields=2), "tribute": "toads"}
-        )
-    assert "gold or flies" in str(exc.value)
-    # Omitting it is fine — gold is the default.
-    state = engine.submit_action(state, "p1", place(fields=2))
-    assert state.commitments["p1"]["placement"][config.FIELDS] == 2
+        engine.submit_action(state, "p2", {"type": "tribute", "resource": "toads"})
+    assert "something you actually hold" in str(exc.value)
+    # Only the losers are asked.
+    with pytest.raises(engine.InvalidAction):
+        engine.submit_action(state, "p1", {"type": "tribute", "resource": "gold"})
+
+
+def test_placement_leaves_one_summary_for_the_results_screen():
+    state = make_game(3, tuning={"rest_empty_penalty": 1})
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 2
+    state = commit_all(state, {
+        "p1": place(military=2), "p2": place(fields=2), "p3": place(rest=2),
+    })
+    [summary] = [e for e in state.log if e["type"] == "placement_result"]
+    assert summary["placements"]["p2"][config.FIELDS] == 2
+    assert summary["majorities"][config.FIELDS]["winner"] == "p2"
+    assert summary["war"]["winner"] == "p1"
+    assert sorted(summary["war"]["owed"]) == ["p2", "p3"]
+    assert sorted(summary["idle"]) == ["p1", "p2"]
+
 
 
 # ---------------------------------------------------------------------------
@@ -1572,6 +1605,8 @@ def random_action(view: dict, rng: random.Random) -> dict:
         for _ in range(me["toads"]):
             placement[rng.choice(config.AREAS)] += 1
         return {"type": "place", "placement": placement}
+    if phase == engine.PHASE_TRIBUTE:
+        return {"type": "tribute", "resource": rng.choice(me["tribute_options"])}
     if phase == engine.PHASE_FEED:
         return {"type": "feed", "keep": min(me["toads"], me["flies"] // config.FEED_COST)}
     raise AssertionError(phase)

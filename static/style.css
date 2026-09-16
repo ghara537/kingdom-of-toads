@@ -294,6 +294,58 @@ button.danger { background: var(--warn); color: #fff; border-color: var(--warn);
 #pause-button[data-paused="true"] { border-color: var(--warn); color: var(--warn); font-weight: 700; }
 #status-line .paused { color: var(--warn); font-weight: 700; }
 
+/* ------------------------------------------------------ results & toasts */
+
+#results-reopen { margin-left: 8px; text-transform: none; letter-spacing: 0; vertical-align: middle; }
+
+/* Auction outcomes: a stack along the top, out of the way of the board. Each
+   one dismisses itself, or goes at a tap. */
+#toasts {
+  position: fixed; top: 60px; left: 0; right: 0; z-index: 150;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 0 16px; pointer-events: none;
+}
+.toast {
+  pointer-events: auto; cursor: pointer;
+  width: 440px; max-width: 100%;
+  background: var(--panel); border: 1px solid var(--line); border-left: 5px solid var(--muted);
+  border-radius: 6px; padding: 10px 14px; box-shadow: 0 6px 20px #0002;
+  animation: toast-in .18s ease-out;
+}
+.toast.win { border-left-color: var(--ok); }
+.toast.sold { border-left-color: var(--accent); }
+.toast.tie { border-left-color: var(--warn); }
+.toast-head { font-weight: 700; }
+.toast-body { font-size: 12px; color: var(--muted); margin-top: 2px; font-family: ui-monospace, monospace; }
+@keyframes toast-in { from { opacity: 0; transform: translateY(-6px); } }
+
+#results-overlay {
+  position: fixed; inset: 0; z-index: 180; background: #0005;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+#results-overlay[hidden] { display: none; }
+#results-card {
+  background: var(--panel); border-radius: 8px; padding: 18px 20px;
+  width: 680px; max-width: 100%; max-height: calc(100vh - 32px); overflow-y: auto;
+  box-shadow: 0 12px 40px #0004;
+}
+#results-card h3 { margin: 0 0 12px; font-size: 16px; color: var(--ink); text-transform: none; letter-spacing: 0; }
+.results-scroll { overflow-x: auto; }
+.results-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.results-table th, .results-table td { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; }
+.results-table th:first-child, .results-table td:first-child { text-align: left; }
+.results-table th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); border-bottom-width: 3px; }
+.results-table th.area-fields { border-bottom-color: var(--fields); }
+.results-table th.area-mine { border-bottom-color: var(--mine); }
+.results-table th.area-military { border-bottom-color: var(--military); }
+.results-table th.area-rest { border-bottom-color: var(--rest); }
+.results-table tr.you td:first-child { font-weight: 700; }
+.results-table td.won { background: #e3f1e7; color: var(--ok); font-weight: 700; }
+.results-table tr.bonus-row td { font-size: 12px; color: var(--muted); border-bottom: none; white-space: normal; }
+.results-notes { margin: 12px 0 8px; padding-left: 20px; font-size: 14px; }
+.results-notes li { margin-bottom: 4px; }
+.results-notes li.warn { color: var(--warn); font-weight: 600; }
+
 /* ============================================================ phones
  *
  * Everything below is gated on a coarse (touch) pointer, so a desktop browser
@@ -311,6 +363,9 @@ button.danger { background: var(--warn); color: #fff; border-color: var(--warn);
      tooltip hangs off those taps. */
   [data-card] { cursor: pointer; }
   #card-tip { width: 230px; max-height: 80vh; overflow-y: auto; }
+  /* No room for the bars: happiness is the number on its tile. */
+  #happiness-track .track-cells, #happiness-track .track-legend, .minitrack { display: none; }
+  #happiness-track .track { margin-top: 6px; }
   .vote-card { padding: 12px 14px; }
 }
 
@@ -411,5 +466,19 @@ button.danger { background: var(--warn); color: #fff; border-color: var(--warn);
   .scoreboard th, .scoreboard td { padding: 4px 5px; font-size: 12px; }
 
   #vote-overlay { bottom: max(8px, env(safe-area-inset-bottom)); }
+
+  #toasts { top: 44px; padding: 0 max(8px, env(safe-area-inset-right)) 0 max(8px, env(safe-area-inset-left)); gap: 4px; }
+  .toast { padding: 6px 10px; width: 520px; }
+  .toast-head { font-size: 13px; }
+  .toast-body { font-size: 11px; }
+  #results-overlay { padding: 6px max(8px, env(safe-area-inset-right)) 6px max(8px, env(safe-area-inset-left)); }
+  #results-card { padding: 10px 14px; max-height: calc(100vh - 12px); max-height: calc(100dvh - 12px); width: 720px; }
+  #results-card h3 { font-size: 14px; margin-bottom: 6px; }
+  .results-table { font-size: 12px; }
+  .results-table th, .results-table td { padding: 3px 6px; }
+  .results-table th { font-size: 10px; }
+  .results-table tr.bonus-row td { font-size: 11px; }
+  .results-notes { margin: 6px 0 4px; font-size: 12px; }
+  #results-card .hint { margin: 4px 0 8px; font-size: 11px; }
   #vote-cards { max-height: 80vh; }
 }

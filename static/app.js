@@ -174,6 +174,7 @@ async function boot() {
   S.catalog = await (await fetch('/api/cards')).json();
   keepaliveInit();
   cardTipInit();
+  resultsInit();
   setInterval(tickTimer, 1000);
   renderSeatConfig();
   renderTuningForm();
@@ -449,6 +450,7 @@ function connect() {
       S.view = msg.view;
       S.timer = { left: msg.table.seconds_left, at: Date.now() };
       render();
+      announce(msg.view);
       tickTimer();
     } else if (msg.type === 'error') {
       if (msg.code === 'no_table') {
@@ -672,7 +674,8 @@ function renderStatus(v) {
   const names = (ids) => ids.map((id) => nameOf(v, id)).join(', ');
   const phase = {
     recruit: 'Recruitment', auction: 'Auction',
-    placement: 'Placement', feed: 'Feeding', finished: 'Finished',
+    placement: 'Placement', tribute: 'War tribute', feed: 'Feeding',
+    finished: 'Finished',
   }[v.phase] || v.phase;
   let text = `Round <b class="num">${v.round}</b> / ${v.rounds} · <span class="phase">${phase}</span>`;
   if (v.phase !== 'finished') {
@@ -1114,7 +1117,6 @@ function actionSignature(v, me) {
     v.phase, v.round, mine, Boolean(v.your_commitment),
     me.toads, me.gold, me.flies, me.recruit_cost,
     a.index, a.stage, a.high_bid, a.tied_amount, a.turn, placed,
-    S.tribute,
   ];
   // While we are waiting on other people, the panel lists who — so it has to
   // keep up. While it is our turn it must not twitch under our fingers.
@@ -1157,6 +1159,7 @@ function renderAction(v, me) {
   if (v.phase === 'recruit') return renderRecruit(host, title, me, v);
   if (v.phase === 'auction') return renderBid(host, title, v, me);
   if (v.phase === 'placement') return renderPlacement(host, title, v, me);
+  if (v.phase === 'tribute') return renderTribute(host, title, v, me);
   if (v.phase === 'feed') return renderFeed(host, title, me, v);
 }
 
@@ -1168,6 +1171,7 @@ function describeCommitment(c) {
       .filter(([, n]) => n).map(([a, n]) => `${AREA_LABEL[a]} ${n}`).join(', ');
   }
   if (c.type === 'feed') return `Feeding ${c.keep}.`;
+  if (c.type === 'tribute') return `Paying tribute in ${c.resource}.`;
   return '';
 }
 
@@ -1326,31 +1330,10 @@ function renderPlacement(host, title, v, me) {
     : `<b>${left}</b> of <b>${me.toads}</b> toads still to place — use the + buttons on the mat.`;
   host.appendChild(summary);
 
-  const rules = v.tuning || {};
-  if (rules.war_tribute) {
-    const label = el('label', null,
-      `If you lose the war, pay ${rules.war_tribute} in`);
-    label.title = 'Declared now, before the war resolves. If the resource you '
-      + 'pick runs short, the balance comes out of the other one.';
-    const pick = el('select');
-    pick.id = 'tribute-pick';
-    for (const [value, text] of [['gold', 'Gold'], ['flies', 'Flies']]) {
-      const o = el('option', null, text); o.value = value; pick.appendChild(o);
-    }
-    pick.value = S.tribute || 'gold';
-    pick.onchange = () => { S.tribute = pick.value; };
-    label.appendChild(pick);
-    const wrap = el('div', 'form-row');
-    wrap.appendChild(label);
-    host.appendChild(wrap);
-  }
-
   const row = el('div', 'form-row');
   const go = el('button', 'primary', 'Commit placement');
   go.disabled = left !== 0;
-  go.onclick = () => send({
-    type: 'place', placement: S.draft, tribute: S.tribute || 'gold',
-  });
+  go.onclick = () => send({ type: 'place', placement: S.draft });
   row.appendChild(go);
   const allFields = el('button', null, 'All to Fields');
   allFields.onclick = () => {
@@ -1368,6 +1351,36 @@ function renderPlacement(host, title, v, me) {
     'Ties award no bonus at all — matching a rival exactly is the worst result '
     + 'for both of you, except in Military where a tie also spares the table its '
     + 'happiness loss.'));
+}
+
+/* Asked only of war losers who hold both gold and flies, and only once the
+ * war is decided — so this round's harvest and majority bonuses are already
+ * in the purse they are choosing from. */
+function renderTribute(host, title, v, me) {
+  const bill = v.tribute || {};
+  const amount = bill.amount || 0;
+  title.textContent = 'Pay war tribute';
+  host.appendChild(el('p', null,
+    `${nameOf(v, bill.winner)} won the war. You owe them ${amount}, in gold or `
+    + 'flies — your choice.'));
+  host.appendChild(el('p', 'hint',
+    `You hold ${me.gold} gold and ${me.flies} flies, this round's income `
+    + 'included. If the pile you pick runs short, the rest comes out of the other.'));
+  const row = el('div', 'form-row');
+  for (const [resource, label, held, other] of [
+    ['gold', 'gold', me.gold, 'flies'], ['flies', 'flies', me.flies, 'gold'],
+  ]) {
+    const short = Math.max(0, amount - held);
+    const text = short
+      ? `Pay ${qty(held, label)} + ${qty(short, other)}`
+      : `Pay ${qty(amount, label)}`;
+    const go = el('button', resource === 'gold' ? 'primary' : null, text);
+    go.onclick = () => send({ type: 'tribute', resource });
+    row.appendChild(go);
+  }
+  host.appendChild(row);
+  host.appendChild(el('p', 'hint',
+    `Feeding comes next: ${me.toads} toads eat ${me.toads * S.cfg.feed_cost} flies.`));
 }
 
 function renderFeed(host, title, me, v) {
@@ -1456,6 +1469,232 @@ function scoreboard(v) {
     .join(' · ');
   wrap.appendChild(el('p', 'hint', 'End-game majorities — ' + maj));
   return wrap;
+}
+
+/* ---------------------------------------------------------------- results
+ *
+ * The log records everything, but it scrolls past quietly while you are busy
+ * with your own move. The moments that settle something between players — a
+ * card sold, a war won, a majority taken — are announced as they happen:
+ * auction outcomes as a banner along the top, and the whole placement phase as
+ * one table you dismiss. Only entries that arrive while you watch are
+ * announced; loading or reconnecting to a table replays nothing.
+ */
+
+const TOAST_SECONDS = 8;
+
+function announce(v) {
+  if (!v || !v.log) return;
+  const log = v.log;
+  if (S.logSeen === undefined || S.logSeen > log.length) {
+    S.logSeen = log.length;
+    S.lastResult = findLastResult(log);
+    renderResultsReopen();
+    return;
+  }
+  for (let i = S.logSeen; i < log.length; i++) {
+    const e = log[i];
+    if (e.type === 'placement_result') {
+      S.lastResult = { entry: e, index: i };
+      showResults(v, e, i);
+    } else {
+      const toast = toastFor(v, e);
+      if (toast) showToast(toast);
+    }
+  }
+  S.logSeen = log.length;
+  renderResultsReopen();
+}
+
+function findLastResult(log) {
+  for (let i = log.length - 1; i >= 0; i--) {
+    if (log[i].type === 'placement_result') return { entry: log[i], index: i };
+  }
+  return null;
+}
+
+function renderResultsReopen() {
+  const btn = $('results-reopen');
+  btn.hidden = !S.lastResult;
+  btn.onclick = () => {
+    if (S.lastResult) showResults(S.view, S.lastResult.entry, S.lastResult.index);
+  };
+}
+
+function who(v, pid) {
+  return pid === v.you ? 'You' : nameOf(v, pid);
+}
+
+function qty(n, resource) {
+  return `${n} ${resource === 'flies' && n === 1 ? 'fly' : resource}`;
+}
+
+function cardName(id) {
+  return (S.catalog[id] || { name: id }).name;
+}
+
+/* Every seat, in seat order, with what it bid — including the ones that did
+ * not bid at all, because a pass is information too. */
+function bidLine(v, bids) {
+  const order = v.seat_order || v.players.map((p) => p.id);
+  return order.map((pid) => {
+    const amount = (bids || {})[pid];
+    return `${nameOf(v, pid)} ${amount ? amount : '—'}`;
+  }).join(' · ');
+}
+
+function toastFor(v, e) {
+  const names = (ids) => (ids || []).map((pid) => who(v, pid)).join(' and ');
+  if (e.type === 'card_won') {
+    return {
+      kind: e.player === v.you ? 'win' : 'sold',
+      head: e.player === v.you
+        ? `You won ${cardName(e.card)} for ${e.price} gold`
+        : `${nameOf(v, e.player)} won ${cardName(e.card)} for ${e.price} gold`,
+      body: 'Bids: ' + bidLine(v, e.bids),
+    };
+  }
+  if (e.type === 'tie') {
+    return {
+      kind: 'tie',
+      head: `${names(e.players)} tied at ${e.amount} for ${cardName(e.card)}`,
+      body: 'One re-bid decides it. Bids: ' + bidLine(v, e.bids),
+    };
+  }
+  if (e.type === 'tie_burn') {
+    return {
+      kind: 'tie',
+      head: `${cardName(e.card)} is gone — tied again at ${e.amount}`,
+      body: `${names(e.players)} each pay the penalty. Bids: ` + bidLine(v, e.bids),
+    };
+  }
+  if (e.type === 'no_bids') {
+    return { kind: 'none', head: `${cardName(e.card)} drew no bids`, body: '' };
+  }
+  if (e.type === 'tribute' && e.phase === 'tribute') {
+    const paid = Object.entries(e.paid || {}).map(([r, n]) => qty(n, r)).join(' and ');
+    return {
+      kind: e.to === v.you ? 'win' : 'none',
+      head: `${who(v, e.player)} paid ${e.to === v.you ? 'you' : nameOf(v, e.to)} ${paid}`,
+      body: 'War tribute',
+    };
+  }
+  return null;
+}
+
+function showToast(t) {
+  const host = $('toasts');
+  const box = el('div', 'toast ' + t.kind);
+  box.setAttribute('role', 'status');
+  box.appendChild(el('div', 'toast-head', t.head));
+  if (t.body) box.appendChild(el('div', 'toast-body', t.body));
+  const close = () => box.remove();
+  box.onclick = close;
+  host.appendChild(box);
+  // Keep the stack short: on a phone three is already most of the screen.
+  while (host.children.length > 3) host.firstChild.remove();
+  setTimeout(close, TOAST_SECONDS * 1000);
+}
+
+function resultsInit() {
+  const overlay = $('results-overlay');
+  overlay.addEventListener('click', (ev) => {
+    if (ev.target === overlay) overlay.hidden = true;
+  });
+  document.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Escape') overlay.hidden = true;
+  });
+}
+
+function showResults(v, e, index) {
+  const card = $('results-card');
+  card.innerHTML = '';
+  const areas = ['fields', 'mine', 'military', 'rest'];
+  const order = v.seat_order || v.players.map((p) => p.id);
+  const war = e.war || {};
+
+  const title = el('h3', null, `Round ${e.round} — placement results`);
+  title.id = 'results-title';
+  card.appendChild(title);
+
+  const wrap = el('div', 'results-scroll');
+  const t = el('table', 'results-table');
+  const head = el('tr');
+  head.appendChild(el('th', null, ''));
+  areas.forEach((a) => head.appendChild(el('th', 'area-' + a, AREA_LABEL[a])));
+  t.appendChild(head);
+
+  for (const pid of order) {
+    const tr = el('tr', pid === v.you ? 'you' : '');
+    tr.appendChild(el('td', null, nameOf(v, pid)));
+    const placed = (e.placements || {})[pid] || {};
+    for (const area of areas) {
+      const count = placed[area] || 0;
+      const winner = area === 'military' ? war.winner : (e.majorities[area] || {}).winner;
+      const td = el('td', 'num' + (winner === pid ? ' won' : ''), String(count));
+      if (area === 'military') {
+        const strength = (e.strengths || {})[pid] || 0;
+        if (strength !== count) td.appendChild(el('span', 'muted', ` (str ${strength})`));
+      }
+      tr.appendChild(td);
+    }
+    t.appendChild(tr);
+  }
+
+  const bonus = el('tr', 'bonus-row');
+  bonus.appendChild(el('td', null, 'Result'));
+  for (const area of areas) {
+    let text;
+    if (area === 'military') {
+      text = war.winner ? `${who(v, war.winner)}: ${war.vp} VP` : 'tied — no war';
+    } else {
+      const m = e.majorities[area] || {};
+      text = m.winner
+        ? `${who(v, m.winner)}: +${qty(m.amount, m.resource)}`
+        : 'no majority';
+    }
+    bonus.appendChild(el('td', null, text));
+  }
+  t.appendChild(bonus);
+  wrap.appendChild(t);
+  card.appendChild(wrap);
+
+  const notes = el('ul', 'results-notes');
+  if (war.winner) {
+    let text = `${who(v, war.winner)} won the war and ${war.winner === v.you ? 'take' : 'takes'} `
+      + `a ${war.vp} VP token. Everyone else loses ${war.penalty} happiness`;
+    text += war.tribute ? ` and pays ${war.tribute} gold or flies in tribute.` : '.';
+    notes.appendChild(el('li', null, text));
+  } else {
+    notes.appendChild(el('li', null,
+      'The war was tied or nobody fought — no token, and nobody loses anything.'));
+  }
+  // Tributes collected automatically, from losers who held only one resource.
+  for (let i = index - 1; i >= 0; i--) {
+    const x = v.log[i];
+    if (!x || x.round !== e.round || x.phase !== 'placement') break;
+    if (x.type !== 'tribute') continue;
+    const paid = Object.entries(x.paid || {}).map(([r, n]) => qty(n, r)).join(' and ');
+    notes.appendChild(el('li', null, `${who(v, x.player)} paid ${paid} in tribute.`));
+  }
+  if ((war.owed || []).includes(v.you) && v.phase === 'tribute') {
+    notes.appendChild(el('li', 'warn', 'You choose how to pay your tribute next.'));
+  }
+  if ((e.idle || []).length) {
+    notes.appendChild(el('li', null,
+      `Nobody in Rest: ${e.idle.map((pid) => who(v, pid)).join(', ')} `
+      + `lose${e.idle.length === 1 && e.idle[0] !== v.you ? 's' : ''} `
+      + `${e.rest_empty_penalty} happiness.`));
+  }
+  card.appendChild(notes);
+  card.appendChild(el('p', 'hint',
+    'Highlighted counts took the bonus. A tie for most gives nobody anything.'));
+
+  const ok = el('button', 'primary', 'Continue');
+  ok.onclick = () => { $('results-overlay').hidden = true; };
+  card.appendChild(ok);
+  $('results-overlay').hidden = false;
+  ok.focus();
 }
 
 function renderLog(v) {

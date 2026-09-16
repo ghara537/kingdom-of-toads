@@ -697,7 +697,10 @@ def _resolve_auction_step(state: GameState) -> None:
     real = {pid: amt for pid, amt in bids.items() if amt > 0}
 
     if not real:
-        _log(state, "no_bids", text=f"{_card_name(state)} drew no bids.")
+        _log(
+            state, "no_bids", card=_current_card(state), bids={},
+            text=f"{_card_name(state)} drew no bids.",
+        )
         _finish_card(state, status=BURNED_UNSOLD)
         return
 
@@ -718,6 +721,8 @@ def _resolve_auction_step(state: GameState) -> None:
         _log(
             state,
             "tie",
+            card=_current_card(state),
+            bids=dict(real),
             players=leaders,
             amount=top,
             text=f"{names} tied at {top} gold — one re-bid.",
@@ -735,6 +740,8 @@ def _resolve_auction_step(state: GameState) -> None:
     _log(
         state,
         "tie_burn",
+        card=_current_card(state),
+        bids=_current_bids(state),
         players=leaders,
         amount=top,
         text=(
@@ -806,7 +813,10 @@ def _resolve_live_card(state: GameState) -> None:
     auction = state.auction
     assert auction is not None
     if auction.high_bidder is None:
-        _log(state, "no_bids", text=f"{_card_name(state)} drew no bids.")
+        _log(
+            state, "no_bids", card=_current_card(state), bids={},
+            text=f"{_card_name(state)} drew no bids.",
+        )
         _finish_card(state, status=BURNED_UNSOLD)
         return
     _award_card(state, auction.high_bidder, auction.high_bid)
@@ -825,6 +835,7 @@ def _award_card(state: GameState, winner_id: str, price: int) -> None:
         player=winner_id,
         card=card_id,
         price=price,
+        bids=_current_bids(state),
         text=f"{winner.name} won {card_lib.get(card_id).name} for {price} gold.",
     )
     _resolve_instant(state, winner, card_id)
@@ -912,6 +923,8 @@ def _resolve_placement(state: GameState) -> None:
 
     idle_penalty = tuning["rest_empty_penalty"]
     idle = []
+    idle_ids: list[str] = []
+    majorities: dict[str, dict[str, Any]] = {}
 
     for player in state.players:
         placement = placements[player.id]
@@ -922,6 +935,7 @@ def _resolve_placement(state: GameState) -> None:
         if idle_penalty and player.toads and not placement.get(config.REST):
             happiness[player.id] -= idle_penalty
             idle.append(player.name)
+            idle_ids.append(player.id)
 
         # (b) per-toad production
         for area, per_toad in config.PRODUCTION.items():
@@ -969,6 +983,9 @@ def _resolve_placement(state: GameState) -> None:
         counts = {pid: placements[pid].get(area, 0) for pid in placements}
         winner = _unique_leader(counts, minimum=config.MAJORITY_MIN_TOADS)
         resource, amount = config.majority_bonus(area, rnd, tuning)
+        majorities[area] = {
+            "winner": winner, "resource": resource, "amount": amount,
+        }
         if winner is None:
             _log(
                 state,
@@ -1044,6 +1061,25 @@ def _resolve_placement(state: GameState) -> None:
     for player in state.players:
         player.happiness = config.clamp_happiness(happiness[player.id])
 
+    # Everything above in one entry, for the results screen. No text: the
+    # individual lines are already in the log.
+    _log(
+        state,
+        "placement_result",
+        placements=placements,
+        majorities=majorities,
+        strengths=strengths,
+        war={
+            "winner": war_winner,
+            "vp": config.war_token_vp(rnd, tuning) if war_winner else 0,
+            "penalty": config.WAR_LOSS_PENALTY if war_winner else 0,
+            "tribute": tuning["war_tribute"] if war_winner else 0,
+            "owed": list((state.tribute or {}).get("owed", [])),
+        },
+        rest_empty_penalty=idle_penalty if idle else 0,
+        idle=idle_ids,
+    )
+
     state.commitments = {}
     state.phase = PHASE_TRIBUTE if state.tribute else PHASE_FEED
 
@@ -1088,8 +1124,9 @@ def _pay_tribute(
 ) -> dict[str, int]:
     """Move ``amount`` from payer to winner, in their chosen resource.
 
-    The choice is declared with the placement, before anyone knows who won.
-    If the chosen resource runs short the balance comes out of the other one,
+    The choice is made once the war is decided and this round's income is in
+    hand, so the loser can see what each pile holds. If the chosen resource
+    runs short the balance comes out of the other one,
     so emptying your purse at the auction is not a way to dodge the bill. A
     player who holds neither pays what they have and no more.
     """
@@ -1451,6 +1488,19 @@ def _name(state: GameState, player_id: str) -> str:
         if p.id == player_id:
             return p.name
     return player_id
+
+
+def _current_card(state: GameState) -> str:
+    auction = state.auction
+    assert auction is not None
+    return auction.slate[auction.index]
+
+
+def _current_bids(state: GameState) -> dict[str, int]:
+    """Every bid revealed on the card now on the block, re-bids included."""
+    auction = state.auction
+    assert auction is not None
+    return dict(auction.results[auction.index]["bids"])
 
 
 def _card_name(state: GameState) -> str:
