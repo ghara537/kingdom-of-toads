@@ -95,6 +95,10 @@ class PlayerState:
     toads: int = config.START_TOADS
     happiness: int = config.START_HAPPINESS
     cards: list[str] = field(default_factory=list)      # owned card ids
+    # Activated cards are consumed when used, but stay in `cards` — they keep
+    # their victory points and still count as property. This is how many
+    # skip-feeding copies have been spent.
+    austerity_used: int = 0
     war_tokens: list[int] = field(default_factory=list)  # VP value of each
     # Last *revealed* placement. Public: the current round's hidden placement
     # lives in GameState.commitments until the phase resolves.
@@ -245,17 +249,28 @@ def pending_players(state: GameState) -> list[str]:
     return []
 
 
-def austerity_cost(player: PlayerState) -> int | None:
-    """Happiness price to skip feeding, or None if this seat cannot.
+def austerity_costs(player: PlayerState) -> list[int]:
+    """Happiness prices of this seat's unspent skip-feeding copies.
 
-    The cheapest copy wins if somebody owns more than one.
+    Cheapest first. Each copy is good for one use in the whole game, so the
+    copies already spent are taken off the front of the list.
     """
-    costs = [
+    costs = sorted(
         card_lib.get(cid).ability_cost
         for cid in player.cards
         if card_lib.get(cid).ability_kind == "skip_feeding"
-    ]
-    return min(costs) if costs else None
+    )
+    return costs[player.austerity_used:]
+
+
+def austerity_cost(player: PlayerState) -> int | None:
+    """Happiness price to skip feeding, or None if this seat cannot.
+
+    The cheapest unspent copy wins if somebody owns more than one; None once
+    every copy has been used.
+    """
+    remaining = austerity_costs(player)
+    return remaining[0] if remaining else None
 
 
 def _eligible_to_bid(state: GameState, player: PlayerState) -> bool:
@@ -310,10 +325,11 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
         count = _as_int(action.get("count"), "count")
         if count < 0:
             raise InvalidAction("cannot recruit a negative number of toads")
-        if count > config.RECRUIT_CAP:
-            raise InvalidAction(f"recruitment is capped at {config.RECRUIT_CAP}")
-
         tuning = state.settings.tuning
+        cap = config.recruit_cap(tuning)
+        if count > cap:
+            raise InvalidAction(f"recruitment is capped at {cap}")
+
         bought = _as_int(action.get("gold_count", 0), "gold_count")
         if bought < 0:
             raise InvalidAction("cannot buy a negative number of toads")
@@ -382,6 +398,13 @@ def validate_action(state: GameState, player_id: str, action: dict) -> None:
         if action.get("austerity"):
             cost = austerity_cost(player)
             if cost is None:
+                if any(
+                    card_lib.get(cid).ability_kind == "skip_feeding"
+                    for cid in player.cards
+                ):
+                    raise InvalidAction(
+                        "your Austerity has already been used — one use per copy"
+                    )
                 raise InvalidAction("you do not own a card that skips feeding")
             if keep != player.toads:
                 raise InvalidAction(
@@ -921,6 +944,7 @@ def _resolve_placement(state: GameState) -> None:
     # Happiness accumulates raw and is clamped once, at the end of the phase.
     happiness = {p.id: p.happiness for p in state.players}
 
+    per_toad_rates = config.production(tuning)
     idle_penalty = tuning["rest_empty_penalty"]
     idle = []
     idle_ids: list[str] = []
@@ -938,7 +962,7 @@ def _resolve_placement(state: GameState) -> None:
             idle_ids.append(player.id)
 
         # (b) per-toad production
-        for area, per_toad in config.PRODUCTION.items():
+        for area, per_toad in per_toad_rates.items():
             count = placement.get(area, 0)
             if not count:
                 continue
@@ -1185,14 +1209,20 @@ def _resolve_feed(state: GameState) -> None:
             # Nobody eats and nobody starves; the kingdom pays in morale.
             cost = austerity_cost(player) or 0
             player.happiness = config.clamp_happiness(player.happiness - cost)
+            # One use per copy: the card stays on the table for its victory
+            # points, but its ability is spent for the rest of the game.
+            player.austerity_used += 1
+            left = len(austerity_costs(player))
             _log(
                 state,
                 "austerity",
                 player=player.id,
                 cost=cost,
+                uses_left=left,
                 text=(
                     f"{player.name} declared austerity: no feeding this round, "
-                    f"-{cost} happiness."
+                    f"-{cost} happiness. That copy is spent"
+                    + (f"; {left} left." if left else ".")
                 ),
             )
             continue
@@ -1357,6 +1387,8 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
                 "waiting_on": p.id in waiting,
                 "can_bid": _eligible_to_bid(state, p),
                 "austerity_cost": austerity_cost(p),
+                "austerity_uses_left": len(austerity_costs(p)),
+                "austerity_used": p.austerity_used,
                 "tribute_options": tribute_options(p),
             }
         )
@@ -1379,6 +1411,8 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
         # Public by design: everyone sees next round's slate at the same moment.
         "upcoming": list(state.upcoming),
         "removed": list(state.removed),
+        "recruit_cap": config.recruit_cap(tuning),
+        "production": config.production(tuning),
         "bonuses": {
             "fields": config.majority_bonus(config.FIELDS, rnd, tuning)[1],
             "mine": config.majority_bonus(config.MINE, rnd, tuning)[1],

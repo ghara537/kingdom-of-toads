@@ -1,7 +1,7 @@
 # KINGDOM OF TOADS — LIVING DESIGN DOCUMENT
 
-**Version 1.2** — 1 September 2026
-**Status: FINAL for prototyping, now being tuned in play.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values. v1.1–v1.2 carry the changes made since the build became playable (see §11).
+**Version 1.3** — 12 October 2026
+**Status: FINAL for prototyping, now being tuned in play.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values. v1.1–v1.3 carry the changes made since the build became playable (see §11).
 
 ---
 
@@ -28,7 +28,7 @@ Kingdom of Toads is a competitive engine-building board game for 2–6 players. 
 
 |               |        |
 | ------------- | ------ |
-| **Flies**     | **10** |
+| **Flies**     | **25** |
 | **Gold**      | **10** |
 | **Toads**     | **2**  |
 | **Happiness** | **10** |
@@ -37,10 +37,12 @@ Setup is now fully specified.
 
 **Opening round math**, at 10 happiness (the 6–10 band, 3 flies per toad):
 
-- 10 flies buys **3 toads** with 1 fly left over — you cannot afford the full 4-toad cap in round 1, which is a good soft brake.
-- That leaves you with 5 toads to place.
-- Five toads all in Fields harvests 10 flies; feeding those five costs 5. You end round 1 with roughly 6 flies and 5 toads.
+- 25 flies buys the full **4-toad cap** for 12 flies, leaving 13 — the cap, not the purse, is the round-1 brake.
+- That leaves you with 6 toads to place.
+- Six toads all in Fields harvests 12 flies; feeding those six costs 6. You end round 1 with roughly 19 flies and 6 toads.
 - 10 gold covers three minimum bids of 3, or one serious bid on a card you actually want.
+
+**Starting flies were raised from 10 to 25 in v1.3.** At 10 the opening was a single scripted move — three toads was all anyone could afford — and a player who lost the first fly majority spent two rounds climbing out of it. 25 makes round 1 a choice between filling the cap, banking flies against the feeding squeeze, and how hard to open on the slate. The squeeze itself is unchanged: it bites from round 2 on, when the toad count rather than the opening purse sets the bill.
 
 **Starting gold was raised from 5 to 10 in v1.1.** At 5, a player who won the first card of the slate was immediately below the 3-gold eligibility floor and locked out of the rest of the round; simulation showed roughly seven of the twenty-four cards revealed in a 6-round, 4-player game going unsold because nobody left could bid. Ten gold keeps two or three players live through a whole slate, which is what makes the face-up slate a budgeting problem rather than a race to card one.
 
@@ -99,12 +101,12 @@ The game runs a fixed number of rounds (see §8). Each round has four phases, re
 **Resolved — recruitment is simultaneous and secret. There is no player order anywhere in this game.**
 
 - All players **secretly declare how many toads they are recruiting** and how many flies they are committing, then **reveal together**.
-- Each player may recruit **up to 4 toads** this phase.
+- Each player may recruit **up to 4 toads** this phase. **Tunable per table since v1.3** (`recruit_cap`); 4 is the default. Toads arriving from a card bypass it.
 - **Cost is paid in flies only.** Gold cannot be used to recruit.
 - Each toad costs the number of **flies** shown by your current happiness band (§4).
 - Newly recruited toads are available to work in Phase 3 of the same round, and must be fed in Phase 4 of the same round.
 
-**Resolved — the toad supply is not capped.** There is no limit on the total number of toads in play. A player is constrained only by flies, happiness and the 4-toad recruitment cap.
+**Resolved — the toad supply is not capped.** There is no limit on the total number of toads in play. A player is constrained only by flies, happiness and the recruitment cap.
 
 The rotating player order from v0.5 is **removed**. With an uncapped supply nothing was ever contested during recruitment, so the order changed no outcome — it was pure table ceremony. Simultaneous reveal is faster and adds a small read: seeing three rivals each field four fresh toads tells you something about the placement phase to come.
 
@@ -185,7 +187,7 @@ Players simultaneously and **secretly** assign their toads across the four areas
 | Area | Effect |
 | ---- | ------ |
 
-**Resolved — production rates (fixed all game):**
+**Resolved — production rates (fixed all game, but set per table since v1.3: `fields_per_toad` and `mine_per_toad`):**
 
 | Area         | Per toad                                          |
 | ------------ | ------------------------------------------------- |
@@ -316,9 +318,11 @@ Watch whether this makes Mine redundant for anyone holding both. Two toads in Mi
 
 | Card          | Dev     | Ability                                                | VP  | Copies |
 | ------------- | ------- | ------------------------------------------------------ | --- | ------ |
-| **Austerity** | village | In any feeding phase: **skip feeding entirely** for **5 happiness** | 2 | 3 |
+| **Austerity** | village | **Once per copy**, in any feeding phase: **skip feeding entirely** for **5 happiness** | 2 | 3 |
 
-Austerity feeds the whole kingdom or none of it — you cannot skip feeding *and* starve toads for the fly majority in the same round. It is usable every round, but the happiness track limits it: from 10 happiness you get two uses before hitting the floor, and the floor is the 4-flies-a-toad recruitment band.
+Austerity feeds the whole kingdom or none of it — you cannot skip feeding *and* starve toads for the fly majority in the same round. **It is one use per copy for the whole game (v1.3).** Using it consumes the card: the card stays in front of its owner, keeping its 2 VP and still counting as property for Guildhall, but the ability is gone. Pick your round.
+
+The original card was usable every round, limited only by the happiness track — from 10 happiness, two uses before hitting the floor. That made it a standing exemption from the feeding squeeze for whoever happened to draw it, which is exactly the thing §1 says to preserve. As a one-shot it is what it was meant to be: an escape from one bad round, bought at the price of a recruitment band or two.
 
 **This is a deliberate exception to a rule §6 states plainly below** — that there is no decision to make about a card once you own it. It earns the exception because it is the only lever a player has against a starvation spiral, and the spiral is otherwise unrecoverable: you starve, you lose happiness, toads get dearer, you starve again. One card that costs a lot of happiness to stop the bleeding is a fair escape hatch. If more activated cards follow, that rule should be rewritten rather than repeatedly excepted.
 
@@ -571,6 +575,8 @@ Closed since v0.1: auction format, auction tie resolution, final-round feeding, 
 ---
 
 ## 11. Change Log
+
+**v1.3 — 12 Oct 2026** — **Austerity is now one use per copy for the whole game** rather than once a round: using it spends the card, which stays on the table for its victory points and its property count. **Starting flies raised from 10 to 25**, so round 1 is a choice rather than a scripted three-toad opening. **Three more numbers are now per-table settings**: the recruitment cap, flies per toad in Fields and gold per toad in the Mine. No change to the happiness track, which still runs 1–20 with everything above the ceiling forfeited.
 
 **v1.2 — 1 Sep 2026** — **The deck is split into village and city halves**, dealt in the first and second halves of the game respectively (`floor(rounds / 2) + 1` is the first city round). **Six new cards**: Militia Post and Mercenary Camp, the first production Military has ever had, paid flat per round rather than per toad; Tadpole Nursery, the first card that breeds toads; Almshouse, giving happiness a second way to score; Guildhall, which scores off property held; and **Austerity, the first card with a decision attached** — skip feeding entirely for 5 happiness, in any round. Village instants trimmed so the two halves read as different orders of magnitude: Larder 5 → 4 flies, Tadpole Pond 2 → 1 toad. Lily Gardens now needs only 1 toad in Rest. Deck grows from 18 types to 24.
 

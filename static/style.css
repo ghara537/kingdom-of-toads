@@ -56,6 +56,12 @@ h3 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; letter-spac
 #status-line .stage.village { color: var(--fields); }
 #status-line .stage.city { color: var(--toads); }
 .card-chip.activated { border-left: 3px solid var(--warn); }
+/* A used activated card: still property, still points, but spent. */
+.card-chip.spent { opacity: 0.65; }
+.card-chip.spent .used {
+  font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--warn); margin-left: 5px;
+}
 #status-line .timer { font-family: ui-monospace, monospace; color: var(--muted); }
 #status-line .timer.urgent { color: var(--warn); font-weight: 700; }
 button.tiny { padding: 1px 6px; font-size: 11px; color: var(--muted); }
@@ -102,6 +108,7 @@ table.seats { width: 100%; border-collapse: collapse; margin-bottom: 12px; }
 table.seats th, table.seats td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); font-size: 14px; }
 table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; }
 .share code { background: #efeee9; padding: 3px 6px; border-radius: 4px; }
+.share button.copy { padding: 2px 10px; font-size: 12px; margin-left: 6px; vertical-align: middle; }
 
 .seat-row { display: flex; gap: 10px; align-items: center; margin-bottom: 6px; font-size: 14px; }
 .seat-row .seat-name { width: 60px; color: var(--muted); }
@@ -111,6 +118,8 @@ table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-tr
 .resources { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .res { border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; text-align: center; }
 .res .v { font-size: 22px; font-family: ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.res .v .cap { font-size: 12px; color: var(--muted); }
+.res.happiness.at-cap .v .cap { color: var(--warn); }
 .res .k { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
 .res.flies .v { color: var(--flies); }
 .res.gold .v { color: var(--gold); }
@@ -131,6 +140,8 @@ table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-tr
 .cell.b3 { background: #7fa85e; }   /* 11-15 : 2 flies */
 .cell.b4 { background: #4b8f6f; }   /* 16-20 : 1 fly   */
 .cell.band-start { border-left: 2px solid var(--ink); }
+/* The top of the track is a hard stop, not just the last cell. */
+.cell.ceiling { border-right: 3px solid var(--ink); color: #fff; }
 .cell.here { outline: 3px solid var(--ink); outline-offset: -1px; color: #fff; font-weight: 700; font-size: 12px; }
 .track-legend { display: flex; margin-top: 4px; font-size: 11px; color: var(--muted); }
 .track-legend span { flex: 1; text-align: center; }
@@ -444,6 +455,7 @@ button.danger { background: var(--warn); color: #fff; border-color: var(--warn);
   .resources { gap: 4px; }
   .res { padding: 3px 2px; min-width: 0; overflow: hidden; }
   .res .v { font-size: 17px; }
+  .res .v .cap { font-size: 10px; }
   .res .k { font-size: 8px; letter-spacing: 0; }
 
   .track { margin: 8px 0 2px; }

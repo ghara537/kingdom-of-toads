@@ -95,7 +95,10 @@ def _recruitment(t: dict) -> dict:
     blocks = [
         _p(
             "Everyone secretly declares how many toads they are taking, then "
-            f"reveals together. You may take up to {config.RECRUIT_CAP} a round."
+            f"reveals together. You may take up to "
+            f"{_plural(config.recruit_cap(t), 'toad')} a round, however they "
+            "are paid for; toads that arrive from a card do not count against "
+            "it."
         ),
         _p("What a toad costs depends on where you sit on the happiness track:"),
         _table(head, rows),
@@ -181,6 +184,7 @@ def _placement(t: dict, rounds: int) -> dict:
             str(config.war_token_vp(r, t)) + " VP",
         ])
 
+    rates = config.production(t)
     blocks = [
         _p(
             "Everyone assigns every toad they own across the four areas in "
@@ -189,9 +193,9 @@ def _placement(t: dict, rounds: int) -> dict:
         _table(
             ["Area", "Per toad"],
             [
-                ["Fields", f"+{config.PRODUCTION[config.FIELDS][config.FLIES]} flies"],
-                ["Mine", f"+{config.PRODUCTION[config.MINE][config.GOLD]} gold"],
-                ["Rest", f"+{config.PRODUCTION[config.REST][config.HAPPINESS]} happiness"],
+                ["Fields", f"+{rates[config.FIELDS][config.FLIES]} flies"],
+                ["Mine", f"+{rates[config.MINE][config.GOLD]} gold"],
+                ["Rest", f"+{rates[config.REST][config.HAPPINESS]} happiness"],
                 ["Military", "nothing — it fights the war"],
             ],
         ),
@@ -252,7 +256,10 @@ def _feeding(t: dict) -> dict:
         blocks.append(_p(
             f"{austerity.name} (a property card) lets its owner skip feeding "
             f"entirely for {austerity.ability_cost} happiness — the whole kingdom "
-            "or none of it."
+            "or none of it. It may be played in any round, but only once: using "
+            "it consumes the card. The card itself stays on the table, keeping "
+            "its victory points and still counting as property for anything "
+            "that scores off cards held."
         ))
     if t["gold_mode"] == config.GOLD_BUYS_FLIES:
         blocks.append(_p(

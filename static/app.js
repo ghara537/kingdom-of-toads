@@ -185,6 +185,7 @@ async function boot() {
   $('create-table').addEventListener('click', createTable);
   $('join-table').addEventListener('click', joinTable);
   $('start-game').addEventListener('click', startGame);
+  $('copy-share').addEventListener('click', copyShareLink);
 
   const code = codeFromUrl();
   if (code) {
@@ -253,6 +254,7 @@ const TUNING_STORE = 'kot:tuning';
 const GROUP_LABEL = {
   start: 'Starting resources',
   recruit: 'Recruiting',
+  production: 'Production per toad',
   auction: 'Auction floor',
   scoring: 'End-game scoring',
   fields: 'Fields majority',
@@ -629,6 +631,35 @@ function showScreen(which) {
   }
 }
 
+/* Clipboard access needs a secure context and can be refused outright, so
+ * there is always a fallback: select the link and let the player copy it the
+ * usual way, with the button saying what happened either way. */
+async function copyShareLink() {
+  const button = $('copy-share');
+  const text = $('share-url').textContent;
+  const done = (label) => {
+    button.textContent = label;
+    clearTimeout(button._reset);
+    button._reset = setTimeout(() => { button.textContent = 'Copy'; }, 2000);
+  };
+  try {
+    await navigator.clipboard.writeText(text);
+    done('Copied');
+    return;
+  } catch (e) {
+    selectShareLink();
+    done('Selected \u2014 copy it');
+  }
+}
+
+function selectShareLink() {
+  const range = document.createRange();
+  range.selectNodeContents($('share-url'));
+  const sel = window.getSelection();
+  sel.removeAllRanges();
+  sel.addRange(range);
+}
+
 function renderLobby() {
   const t = S.table;
   $('share-url').textContent = location.origin + '/t/' + t.code;
@@ -781,13 +812,22 @@ function tickTimer() {
 function renderResources(me, v) {
   const box = $('my-resources');
   box.innerHTML = '';
+  const cap = S.cfg.happiness_max;
   const items = [
     ['toads', 'toads', me.toads], ['flies', 'flies', me.flies],
     ['gold', 'gold', me.gold], ['happiness', 'happy', me.happiness],
   ];
   for (const [cls, label, value] of items) {
     const d = el('div', 'res ' + cls);
-    d.appendChild(el('div', 'v', String(value)));
+    const val = el('div', 'v', String(value));
+    // Happiness is the one resource with a ceiling, so it shows what it is.
+    if (cls === 'happiness') {
+      val.appendChild(el('span', 'cap', '/' + cap));
+      d.title = `Happiness runs ${S.cfg.happiness_min}\u2013${cap}. `
+        + 'Anything above the ceiling is forfeited.';
+      if (value >= cap) d.classList.add('at-cap');
+    }
+    d.appendChild(val);
     d.appendChild(el('div', 'k', label));
     box.appendChild(d);
   }
@@ -808,7 +848,9 @@ function renderHappiness(me) {
     const c = el('div', 'cell b' + (idx + 1), h % 5 === 0 || h === 1 ? String(h) : '');
     if (bands[idx][0] === h) c.classList.add('band-start');
     if (h === me.happiness) { c.classList.add('here'); c.textContent = String(h); }
-    c.title = `${h} happiness — ${bands[idx][2]} flies per toad`;
+    if (h === S.cfg.happiness_max) c.classList.add('ceiling');
+    c.title = `${h} happiness — ${bands[idx][2]} flies per toad`
+      + (h === S.cfg.happiness_max ? ' (the ceiling)' : '');
     cells.appendChild(c);
   }
   wrap.appendChild(cells);
@@ -836,6 +878,11 @@ function renderHappiness(me) {
     const drop = me.happiness - band[0] + 1;
     text += ` <span class="muted">−${drop} drops a band.</span>`;
   }
+  text += ` <span class="muted">Happiness stops at ${cap}`
+    + (me.happiness >= cap
+      ? ' — you are at the ceiling, and anything more is forfeited.'
+      : '; anything above it is forfeited.')
+    + '</span>';
   caption.innerHTML = text;
   wrap.appendChild(caption);
   host.appendChild(wrap);
@@ -861,9 +908,18 @@ function renderMat(me, v) {
   const editable = v.phase === 'placement' && !v.your_commitment
     && v.waiting_on.includes(v.you);
 
+  // Fields and Mine are per-table rates, so read them off the view rather
+  // than printing the defaults.
+  const per = v.production || S.cfg.production || {};
+  const rate = (area, resource, fallback) => {
+    const n = ((per[area] || {})[resource]);
+    return n === undefined ? fallback : n;
+  };
   const rates = {
-    fields: '+2 flies / toad', mine: '+2 gold / toad',
-    rest: '+1 happiness / toad', military: 'no production',
+    fields: `+${rate('fields', 'flies', 2)} flies / toad`,
+    mine: `+${rate('mine', 'gold', 2)} gold / toad`,
+    rest: `+${rate('rest', 'happiness', 1)} happiness / toad`,
+    military: 'no production',
   };
   const bonuses = {
     fields: `Majority <b>+${v.bonuses.fields}</b> flies`,
@@ -926,9 +982,13 @@ function renderPlacementCounter(me, v, editable) {
     left ? `of ${me.toads} toads left to place` : `all ${me.toads} toads placed`));
 }
 
-function cardChip(id) {
+function cardChip(id, spent) {
   const c = S.catalog[id] || { name: id, group: '', vp: 0, text: '' };
-  const chip = el('span', 'card-chip ' + c.group, c.name);
+  const chip = el('span', 'card-chip ' + c.group + (spent ? ' spent' : ''), c.name);
+  if (spent) {
+    chip.appendChild(el('span', 'used', 'used'));
+    chip.title = 'Used. It still scores and still counts as property.';
+  }
   chip.appendChild(el('span', 'vp', c.vp ? c.vp + 'vp' : '★'));
   // The tooltip is wired by delegation, so it survives every re-render.
   chip.dataset.card = id;
@@ -947,7 +1007,8 @@ function cardChip(id) {
 
 const KIND_NOTE = {
   engine: 'Fires every round during placement, while the requirement is met.',
-  activated: 'Yours to use, or not, in any feeding phase.',
+  activated: 'Yours to use, or not, in any one feeding phase. Using it '
+    + 'spends the card: it stays on the table and keeps its points.',
   instant: 'Fired once, at the moment it was bought.',
   flat: 'No effect. Just points.',
   conditional: 'Counted once, at the end of the game.',
@@ -1029,7 +1090,13 @@ function renderMyCards(me, v) {
   const host = $('my-cards');
   host.innerHTML = '';
   if (!me.cards.length) host.appendChild(el('span', 'hint', 'No property yet.'));
-  me.cards.forEach((id) => host.appendChild(cardChip(id)));
+  // Copies are interchangeable, so the first N Austerity chips wear the mark.
+  let spentLeft = me.austerity_used || 0;
+  me.cards.forEach((id) => {
+    const spent = id === 'austerity' && spentLeft > 0;
+    if (spent) spentLeft -= 1;
+    host.appendChild(cardChip(id, spent));
+  });
   $('my-vp').textContent = `· ${v.projected_scores[me.id]} VP projected`;
 }
 
@@ -1103,7 +1170,12 @@ function renderOpponents(v) {
 
     if (p.cards.length) {
       const cards = el('div', 'cards');
-      p.cards.forEach((id) => cards.appendChild(cardChip(id)));
+      let spentLeft = p.austerity_used || 0;
+      p.cards.forEach((id) => {
+        const spent = id === 'austerity' && spentLeft > 0;
+        if (spent) spentLeft -= 1;
+        cards.appendChild(cardChip(id, spent));
+      });
       box.appendChild(cards);
     }
     host.appendChild(box);
@@ -1248,7 +1320,11 @@ function describeCommitment(c) {
     return 'Placement: ' + Object.entries(c.placement)
       .filter(([, n]) => n).map(([a, n]) => `${AREA_LABEL[a]} ${n}`).join(', ');
   }
-  if (c.type === 'feed') return `Feeding ${c.keep}.`;
+  if (c.type === 'feed') {
+    return c.austerity
+      ? `Austerity declared: feeding nobody, all ${c.keep} toads survive.`
+      : `Feeding ${c.keep}.`;
+  }
   if (c.type === 'tribute') return `Paying tribute in ${c.resource}.`;
   return '';
 }
@@ -1258,20 +1334,29 @@ function renderRecruit(host, title, me, v) {
   const rules = v.tuning || {};
   const mode = rules.gold_mode || 0;
   const cost = me.recruit_cost;
-  const cap = S.cfg.recruit_cap;
+  // The table's cap, not the global default: a host can change it.
+  const cap = v.recruit_cap !== undefined ? v.recruit_cap : S.cfg.recruit_cap;
   const goldCost = cost + (rules.recruit_gold_premium || 0);
   const rate = rules.gold_per_fly || 2;
 
-  const maxFlies = Math.min(cap, Math.floor(me.flies / cost));
-  const maxGold = mode === 1 ? Math.min(cap, Math.floor(me.gold / goldCost)) : 0;
+  // Two separate ceilings, and the player needs to see both: the cap is what
+  // the rules allow this round, affordability is what the purse allows.
+  const affordFlies = Math.floor(me.flies / cost);
+  const affordGold = mode === 1 ? Math.floor(me.gold / goldCost) : 0;
+  const maxFlies = Math.min(cap, affordFlies);
+  const maxGold = mode === 1 ? Math.min(cap, affordGold) : 0;
   const maxTrade = mode === 2 ? Math.floor(me.gold / rate) : 0;
+  const slash = (afford) => `max ${cap}/${afford}`;
+  const slashNote = 'Cap allowed this round / how many you can afford. '
+    + 'The lower of the two is what you can actually take.';
 
   const row = el('div', 'form-row');
   const input = el('input');
   input.type = 'number'; input.min = '0'; input.value = '0';
   input.max = String(mode === 2 ? cap : maxFlies);
   const label = el('label', null, `With flies, ${cost} each`
-    + (mode === 2 ? '' : ` (max ${maxFlies})`));
+    + (mode === 2 ? '' : ` (${slash(affordFlies)})`));
+  if (mode !== 2) label.title = slashNote;
   label.appendChild(input);
   row.appendChild(label);
 
@@ -1281,9 +1366,10 @@ function renderRecruit(host, title, me, v) {
     goldInput = el('input');
     goldInput.type = 'number'; goldInput.min = '0';
     goldInput.max = String(maxGold); goldInput.value = '0';
-    const goldLabel = el('label', null, `With gold, ${goldCost} each (max ${maxGold})`);
+    const goldLabel = el('label', null,
+      `With gold, ${goldCost} each (${slash(affordGold)})`);
     goldLabel.title = 'Priced off your happiness band, plus a premium — the same '
-      + 'track that prices flies.';
+      + `track that prices flies. ${slashNote}`;
     goldLabel.appendChild(goldInput);
     row.appendChild(goldLabel);
   } else if (mode === 2) {
@@ -1337,7 +1423,9 @@ function renderRecruit(host, title, me, v) {
   update();
   host.appendChild(el('p', 'hint',
     'Everyone commits secretly and reveals together. Cap is ' + cap
-    + ' toads a round.'));
+    + ' toads a round'
+    + (mode === 1 ? ', counting both currencies together' : '')
+    + '. A max of 4/2 means the rules allow 4 and you can afford 2.'));
 }
 
 function renderBid(host, title, v, me) {
@@ -1477,15 +1565,44 @@ function renderFeed(host, title, me, v) {
   }
 
   if (me.austerity_cost !== null && me.austerity_cost !== undefined) {
+    const left = me.austerity_uses_left;
     const box = el('div', 'austerity');
-    const go = el('button', 'danger', `Declare austerity (\u2212${me.austerity_cost} happiness)`);
+    const go = el('button', 'danger',
+      `Declare austerity (\u2212${me.austerity_cost} happiness)`);
     go.onclick = () => send({ type: 'feed', keep: me.toads, austerity: true });
     box.appendChild(go);
     box.appendChild(el('p', 'hint',
       `Nobody eats and nobody starves: all ${me.toads} toads survive for free, `
-      + `and you drop to ${Math.max(1, me.happiness - me.austerity_cost)} happiness.`));
+      + `and you drop to ${Math.max(1, me.happiness - me.austerity_cost)} happiness. `
+      + 'Using it spends the card for the rest of the game — it keeps its '
+      + 'victory points and still counts as property. '
+      + (left > 1 ? `You hold ${left} unused copies.` : 'This is your last use.')));
     host.appendChild(box);
+  } else if (me.austerity_used) {
+    host.appendChild(el('p', 'hint',
+      me.austerity_used > 1
+        ? `All ${me.austerity_used} of your Austerity cards have been used.`
+        : 'Your Austerity has already been used — one use per copy.'));
   }
+  // One click for the common case: feed the lot, or as many as the flies
+  // stretch to. The number box below is for deliberately culling.
+  if (me.toads) {
+    const all = el('div', 'form-row');
+    const feedAll = el('button', 'primary',
+      max >= me.toads
+        ? `Feed all ${me.toads} toads (\u2212${me.toads * S.cfg.feed_cost} flies)`
+        : `Feed the ${max} you can afford (\u2212${max * S.cfg.feed_cost} flies)`);
+    feedAll.onclick = () => send({
+      type: 'feed', keep: max, exchange: traded * rate,
+    });
+    all.appendChild(feedAll);
+    if (max < me.toads) {
+      all.appendChild(el('span', 'hint',
+        `${me.toads - max} would starve: \u2212${me.toads - max} happiness.`));
+    }
+    host.appendChild(all);
+  }
+
   const row = el('div', 'form-row');
   const input = el('input');
   input.type = 'number'; input.min = '0'; input.max = String(max); input.value = String(max);
@@ -1496,13 +1613,15 @@ function renderFeed(host, title, me, v) {
   const update = () => {
     const keep = Math.max(0, Math.min(max, parseInt(input.value || '0', 10)));
     const starved = me.toads - keep;
-    preview.textContent = `Costs ${keep} flies of your ${me.flies}. `
+    const vp = (v.scoring || {}).vp_per_toad;
+    preview.textContent = `Costs ${keep * S.cfg.feed_cost} flies of your ${me.flies}. `
       + (starved
-        ? `${starved} toads starve: −${starved} happiness, −${starved * 2} VP.`
+        ? `${starved} toads starve: −${starved} happiness`
+          + (vp ? `, −${starved * vp} VP.` : '.')
         : 'Nobody starves.');
   };
   input.addEventListener('input', update);
-  const go = el('button', 'primary', 'Commit');
+  const go = el('button', me.toads ? null : 'primary', 'Commit');
   go.onclick = () => send({
     type: 'feed', keep: parseInt(input.value || '0', 10),
     exchange: traded * rate,

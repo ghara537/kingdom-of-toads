@@ -32,7 +32,8 @@ class Card:
     effect: tuple[str, int] | None = None
     # Conditional scorers only: (metric, per, vp) -> floor(metric/per) * vp.
     conditional: tuple[str, int, int] | None = None
-    # Activated cards only: (ability, cost) the owner may choose to pay.
+    # Activated cards only: (ability, cost) the owner may choose to pay. One
+    # use per copy for the whole game; the card is kept but spent.
     ability: tuple[str, int] | None = None
 
     @property
@@ -97,7 +98,10 @@ class Card:
         if self.is_activated:
             kind, cost = self.ability
             if kind == "skip_feeding":
-                return f"Any round: skip feeding for {cost} happiness"
+                return (
+                    f"Once per game: skip feeding for {cost} happiness, in any "
+                    "round"
+                )
             return f"{kind} for {cost} happiness"
         if self.is_conditional:
             metric, per, vp = self.conditional

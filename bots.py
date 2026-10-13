@@ -61,8 +61,9 @@ class Bot:
     weights = {config.FIELDS: 0.4, config.MINE: 0.3, config.MILITARY: 0.2, config.REST: 0.1}
     # Multipliers on BASE_CARD_VALUE, by card id.
     card_taste: dict[str, float] = {}
-    # Recruit up to this many toads a round, gold permitting.
-    recruit_appetite = config.RECRUIT_CAP
+    # Recruit up to this many toads a round, gold permitting. None means
+    # whatever this table's cap allows, however high the host has set it.
+    recruit_appetite: int | None = None
     # Stop recruiting once happiness costs this much per toad or more.
     recruit_cost_ceiling = 4
     # Happiness below this pulls toads into Rest.
@@ -127,7 +128,9 @@ class Bot:
         rules = _rules(view)
         mode = rules["gold_mode"]
         fly_price = me["recruit_cost"]
-        room = min(self.recruit_appetite, config.RECRUIT_CAP)
+        cap = config.recruit_cap(rules)
+        room = cap if self.recruit_appetite is None else min(
+            self.recruit_appetite, cap)
         spare_gold = max(0, me["gold"] - self.auction_purse)
         flies = max(0, me["flies"] - self._feed_reserve(view))
 
@@ -273,7 +276,7 @@ class Bot:
         shortfall = want - me["gold"]
         if shortfall <= 0:
             return placement
-        per_toad = config.PRODUCTION[config.MINE][config.GOLD]
+        per_toad = config.production(_rules(view))[config.MINE][config.GOLD]
         extra = min(self.mine_stretch, math.ceil(shortfall / per_toad))
         return _move_to(
             placement,
@@ -449,7 +452,7 @@ class Farmer(Bot):
         "gold_seam": 0.6,
         "deep_vein": 0.6,
     }
-    recruit_appetite = config.RECRUIT_CAP
+    recruit_appetite = None
     recruit_cost_ceiling = 4
     happiness_floor = 9
     tie_off_nerve = 0.4

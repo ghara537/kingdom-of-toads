@@ -46,7 +46,7 @@ MAX_PLAYERS = 6
 # Starting setup — DESIGN §2
 # ---------------------------------------------------------------------------
 
-START_FLIES = 10
+START_FLIES = 25
 START_GOLD = 10
 START_TOADS = 2
 START_HAPPINESS = 10
@@ -71,6 +71,7 @@ RECRUIT_COST_BANDS = (
 # ---------------------------------------------------------------------------
 
 RECRUIT_CAP = 4                 # per player per round; toad instants bypass it
+                                # per-table override: tuning['recruit_cap']
 
 # What gold may do beyond bidding. Modes 1 and 2 both soften the resource
 # separation DESIGN.md §3 calls strict, so the default keeps it strict.
@@ -110,7 +111,8 @@ AUCTION_BURN_UNSOLD = True
 # Phase 3 — production, majorities, war
 # ---------------------------------------------------------------------------
 
-# Per toad placed, per round. Military produces nothing.
+# Per toad placed, per round. Military produces nothing. Fields and Mine are
+# per-table tunables; read them through production() rather than this dict.
 PRODUCTION = {
     FIELDS: {FLIES: 2},
     MINE: {GOLD: 2},
@@ -396,8 +398,9 @@ CARD_DEFS = {
         "development": VILLAGE,
         "group": GROUP_ACTIVATED,
         "vp": 2,
-        # (ability, cost): skip feeding this round for 5 happiness. Usable
-        # every round, but the happiness floor makes it self-limiting.
+        # (ability, cost): skip feeding this round for 5 happiness. Usable in
+        # any round, but ONCE per copy — the card is consumed when activated
+        # and only its victory points and its property count remain.
         "ability": ("skip_feeding", 5),
     },
 
@@ -466,6 +469,27 @@ def recruit_gold_cost(happiness: int, tuning: dict[str, int] | None = None) -> i
     return recruit_cost(happiness) + t["recruit_gold_premium"]
 
 
+def recruit_cap(tuning: dict[str, int] | None = None) -> int:
+    """Most toads one player may recruit in a round at this table."""
+    t = tuning or TUNING_DEFAULTS
+    return t["recruit_cap"]
+
+
+def production(tuning: dict[str, int] | None = None) -> dict[str, dict[str, int]]:
+    """Per-toad, per-round output by area, with this table's rates applied.
+
+    Fields and Mine are tunable; Rest and Military are not, so they come
+    straight off PRODUCTION.
+    """
+    t = tuning or TUNING_DEFAULTS
+    return {
+        FIELDS: {FLIES: t["fields_per_toad"]},
+        MINE: {GOLD: t["mine_per_toad"]},
+        REST: dict(PRODUCTION[REST]),
+        MILITARY: dict(PRODUCTION[MILITARY]),
+    }
+
+
 def recruit_band(happiness: int) -> tuple[int, int, int]:
     """The (low, high, cost) band containing the given happiness."""
     for band in RECRUIT_COST_BANDS:
@@ -522,6 +546,17 @@ TUNING_FIELDS = (
     ("gold_per_fly", "Gold per fly (mode 2)",
      "Gold paid for each fly received. Mode 2 only.",
      GOLD_PER_FLY, 1, 10, "recruit"),
+    ("recruit_cap", "Recruit cap",
+     "Most toads one player may take in a round, however they are paid for. "
+     "Toads arriving from a card bypass it.",
+     RECRUIT_CAP, 0, 20, "recruit"),
+
+    ("fields_per_toad", "Flies per Fields toad",
+     "Flies each toad placed in Fields produces every round.",
+     PRODUCTION[FIELDS][FLIES], 0, 20, "production"),
+    ("mine_per_toad", "Gold per Mine toad",
+     "Gold each toad placed in the Mine produces every round.",
+     PRODUCTION[MINE][GOLD], 0, 20, "production"),
 
     ("auction_min_bid", "Minimum bid", "The smallest bid that is not a pass.",
      AUCTION_MIN_BID, 1, 30, "auction"),

@@ -151,14 +151,18 @@ def test_recruitment_costs_the_happiness_band_rate():
             "p2": {"type": "recruit", "count": 2},
         },
     )
-    assert (state.players[0].toads, state.players[0].flies) == (6, 6)
-    assert (state.players[1].toads, state.players[1].flies) == (4, 2)
+    assert state.players[0].toads == 6
+    assert state.players[0].flies == config.START_FLIES - 4   # 4 at 1 fly each
+    assert state.players[1].toads == 4
+    assert state.players[1].flies == config.START_FLIES - 8   # 2 at 4 flies each
 
 
 def test_recruitment_cap_and_affordability_are_enforced():
     state = make_game(2)
+    cap = config.recruit_cap(state.settings.tuning)
     with pytest.raises(engine.InvalidAction):
-        engine.submit_action(state, "p1", {"type": "recruit", "count": 5})
+        engine.submit_action(state, "p1", {"type": "recruit", "count": cap + 1})
+    state.player("p1").flies = 10
     with pytest.raises(engine.InvalidAction):
         # 4 toads at 3 flies each = 12, but they only hold 10.
         engine.submit_action(state, "p1", {"type": "recruit", "count": 4})
@@ -365,7 +369,7 @@ def test_instant_cards_resolve_on_purchase():
         state,
         {"p1": {"type": "bid", "amount": 3}, "p2": {"type": "bid", "amount": 0}},
     )
-    assert state.player("p1").flies == 18  # 10 + 8
+    assert state.player("p1").flies == config.START_FLIES + 8
     # p1 is down to 2 gold and out of the auction, so p2 bids alone.
     assert engine.pending_players(state) == ["p2"]
     state = engine.submit_action(state, "p2", {"type": "bid", "amount": 3})
@@ -535,11 +539,13 @@ def test_production_rates():
         },
     )
     p1 = state.player("p1")
-    assert p1.flies == 16          # 10 + 2*2 production + 2 Fields majority
+    # 2*2 production + 2 Fields majority
+    assert p1.flies == config.START_FLIES + 6
     assert p1.gold == config.START_GOLD + 4   # 2*1 production + 2 Mine majority
     # 10 + 1 rest + 1 Rest majority (round 1) - 1 war loss = 11
     assert p1.happiness == 11
-    assert state.player("p2").flies == 10   # Military produces nothing
+    # Military produces nothing
+    assert state.player("p2").flies == config.START_FLIES
 
 
 def test_majority_tie_pays_production_but_no_bonus():
@@ -549,7 +555,8 @@ def test_majority_tie_pays_production_but_no_bonus():
         p.toads = 3
     state = commit_all(state, {"p1": place(fields=3), "p2": place(fields=3)})
     for p in state.players:
-        assert p.flies == 16       # 10 + 3*2, and no +2 majority bonus
+        # 3*2 production, and no +2 majority bonus
+        assert p.flies == config.START_FLIES + 6
     assert any(e["type"] == "majority_tie" for e in state.log)
 
 
@@ -564,7 +571,7 @@ def test_majority_bonus_goes_to_a_unique_leader():
     )
     assert state.player("p1").gold == config.START_GOLD + 8   # 3*2 + 2 majority
     assert state.player("p2").gold == config.START_GOLD + 4   # 2*2, no bonus
-    assert state.player("p3").flies == 18  # 10 + 3*2 + 2 majority
+    assert state.player("p3").flies == config.START_FLIES + 8  # 3*2 + 2 majority
 
 
 def test_an_empty_area_awards_no_majority():
@@ -585,7 +592,8 @@ def test_majority_bonuses_escalate_with_the_round():
     for p in state.players:
         p.toads = 2
     state = commit_all(state, {"p1": place(fields=2), "p2": place(mine=2)})
-    assert state.player("p1").flies == 19   # 10 + 4 + 5 (round 4 bonus)
+    # 2*2 production + the round-4 bonus of 5
+    assert state.player("p1").flies == config.START_FLIES + 9
     assert state.player("p2").gold == config.START_GOLD + 9   # 2*2 + round-4 bonus
 
 
@@ -659,10 +667,10 @@ def test_engine_cards_fire_only_when_the_threshold_is_met_and_they_stack():
     state.player("p1").cards = ["fly_farm", "fly_farm", "great_marsh"]
     state.player("p2").cards = ["great_marsh"]
     state = commit_all(state, {"p1": place(fields=3), "p2": place(fields=2, rest=1)})
-    # p1: 10 + 6 production + (2 + 2 + 4) cards + 2 majority = 26
-    assert state.player("p1").flies == 26
-    # p2: 10 + 4 production; Great Marsh needs 3 in Fields and stays silent.
-    assert state.player("p2").flies == 14
+    # p1: 6 production + (2 + 2 + 4) cards + 2 majority
+    assert state.player("p1").flies == config.START_FLIES + 16
+    # p2: 4 production; Great Marsh needs 3 in Fields and stays silent.
+    assert state.player("p2").flies == config.START_FLIES + 4
 
 
 def test_happiness_is_clamped_to_the_ceiling_once_per_phase():
@@ -702,7 +710,7 @@ def test_feeding_costs_one_fly_per_toad():
     state = commit_all(
         state, {"p1": {"type": "feed", "keep": 4}, "p2": {"type": "feed", "keep": 4}}
     )
-    assert state.player("p1").flies == 6
+    assert state.player("p1").flies == config.START_FLIES - 4
     assert state.player("p1").toads == 4
     assert state.player("p1").happiness == 10
 
@@ -717,7 +725,8 @@ def test_starvation_is_a_free_choice_and_costs_happiness():
         state, {"p1": {"type": "feed", "keep": 1}, "p2": {"type": "feed", "keep": 4}}
     )
     assert state.player("p1").toads == 1
-    assert state.player("p1").flies == 9        # only paid for the one kept
+    # only paid for the one kept
+    assert state.player("p1").flies == config.START_FLIES - 1
     assert state.player("p1").happiness == 7    # 3 starved, 1 happiness each
 
 
@@ -1247,10 +1256,14 @@ def test_austerity_skips_feeding_for_happiness():
     assert state.player("p1").happiness == config.START_HAPPINESS - 5
     assert state.player("p2").toads == 0          # p2 starved the lot
     assert any(e["type"] == "austerity" for e in state.log)
+    # The copy is spent, but the card is still owned and still scores.
+    assert state.player("p1").cards == ["austerity"]
+    assert state.player("p1").austerity_used == 1
+    assert engine.austerity_cost(state.player("p1")) is None
 
 
 def test_austerity_is_limited_by_the_happiness_floor():
-    """Usable every round, but the track runs out before the toads do."""
+    """One use per copy, and the track can make even that one unaffordable."""
     state = make_game(2)
     set_phase(state, engine.PHASE_FEED)
     for p in state.players:
@@ -1266,6 +1279,74 @@ def test_austerity_is_limited_by_the_happiness_floor():
     assert config.recruit_cost(state.player("p1").happiness) == 4
 
 
+def test_austerity_is_one_use_per_copy_for_the_whole_game():
+    """It may be played in any round, but each copy only ever once."""
+    state = make_game(2)
+    set_phase(state, engine.PHASE_FEED)
+    for p in state.players:
+        p.toads = 2
+        p.flies = 0
+    p1 = state.player("p1")
+    p1.cards = ["austerity", "austerity"]
+    p1.happiness = config.HAPPINESS_MAX
+    assert engine.austerity_cost(p1) == 5
+
+    def skip_feeding(state):
+        return commit_all(state, {
+            "p1": {"type": "feed", "keep": 2, "austerity": True},
+            "p2": {"type": "feed", "keep": 0},
+        })
+
+    # First copy.
+    state = skip_feeding(state)
+    assert state.player("p1").austerity_used == 1
+    assert engine.austerity_cost(state.player("p1")) == 5    # the second copy
+
+    # Second copy, a later round.
+    set_phase(state, engine.PHASE_FEED)
+    for p in state.players:
+        p.toads = 2
+        p.flies = 0
+    state = skip_feeding(state)
+    p1 = state.player("p1")
+    assert p1.austerity_used == 2
+    assert engine.austerity_cost(p1) is None
+    assert p1.happiness == config.HAPPINESS_MAX - 10
+    # Both cards are still held: they keep their VP and still count as property.
+    assert p1.cards == ["austerity", "austerity"]
+    assert engine.score(state)["breakdown"]["p1"]["cards"] == 4
+
+    # A third attempt is rejected, and says why.
+    set_phase(state, engine.PHASE_FEED)
+    for p in state.players:
+        p.toads = 2
+        p.flies = 0
+    with pytest.raises(engine.InvalidAction) as exc:
+        engine.submit_action(
+            state, "p1", {"type": "feed", "keep": 2, "austerity": True})
+    assert "already been used" in str(exc.value)
+
+
+def test_a_spent_austerity_survives_a_save_and_reload():
+    state = make_game(2)
+    state.player("p1").cards = ["austerity"]
+    state.player("p1").austerity_used = 1
+    back = engine.deserialize(engine.serialize(state))
+    assert back.player("p1").austerity_used == 1
+    assert engine.austerity_cost(back.player("p1")) is None
+
+
+def test_an_old_save_without_the_counter_loads_unspent():
+    state = make_game(2)
+    state.player("p1").cards = ["austerity"]
+    data = engine.serialize(state)
+    for seat in data["players"]:
+        seat.pop("austerity_used")
+    back = engine.deserialize(data)
+    assert back.player("p1").austerity_used == 0
+    assert engine.austerity_cost(back.player("p1")) == 5
+
+
 # ---------------------------------------------------------------------------
 # Per-table tuning
 # ---------------------------------------------------------------------------
@@ -1279,6 +1360,43 @@ def test_a_table_scores_toads_at_its_own_rate():
     plain = make_game(2)
     plain.player("p1").toads = 4
     assert engine.score(plain)["breakdown"]["p1"]["toads"] == 4 * config.VP_PER_TOAD
+
+
+def test_a_table_sets_its_own_recruit_cap():
+    state = make_game(2, tuning={"recruit_cap": 7})
+    for p in state.players:
+        p.flies = 100
+    with pytest.raises(engine.InvalidAction) as exc:
+        engine.submit_action(state, "p1", {"type": "recruit", "count": 8})
+    assert "capped at 7" in str(exc.value)
+    state = commit_all(state, {
+        "p1": {"type": "recruit", "count": 7},
+        "p2": {"type": "recruit", "count": 0},
+    })
+    assert state.player("p1").toads == config.START_TOADS + 7
+
+
+def test_a_table_sets_its_own_per_toad_production():
+    state = make_game(2, tuning=dict(NO_PRESSURE, fields_per_toad=5,
+                                     mine_per_toad=0))
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 3
+    state = commit_all(state, {"p1": place(fields=3), "p2": place(mine=3)})
+    # 3 * 5 flies, plus the Fields majority, which is unchanged by the rate.
+    assert state.player("p1").flies == config.START_FLIES + 15 + 2
+    # The Mine pays nothing per toad here, but the majority still lands.
+    assert state.player("p2").gold == config.START_GOLD + 2
+    # Rest is not tunable, so it keeps the global rate.
+    assert config.production(state.settings.tuning)[config.REST] == \
+        config.PRODUCTION[config.REST]
+
+
+def test_the_view_carries_the_cap_and_the_production_rates():
+    state = make_game(2, tuning={"recruit_cap": 2, "fields_per_toad": 9})
+    view = engine.player_view(state, "p1")
+    assert view["recruit_cap"] == 2
+    assert view["production"][config.FIELDS][config.FLIES] == 9
 
 
 def test_end_game_majorities_use_the_table_values():

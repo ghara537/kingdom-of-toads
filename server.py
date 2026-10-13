@@ -318,7 +318,8 @@ async def public_config():
         "happiness_min": config.HAPPINESS_MIN,
         "happiness_max": config.HAPPINESS_MAX,
         "recruit_bands": [list(b) for b in config.RECRUIT_COST_BANDS],
-        "recruit_cap": config.RECRUIT_CAP,
+        # Table defaults: a live game's own values ride along in the view.
+        "recruit_cap": config.recruit_cap(),
         "min_bid": config.AUCTION_MIN_BID,
         "eligibility": config.AUCTION_ELIGIBILITY,
         "feed_cost": config.FEED_COST,
@@ -332,7 +333,7 @@ async def public_config():
             }
             for key, label, note, default, low, high, group in config.TUNING_FIELDS
         ],
-        "production": config.PRODUCTION,
+        "production": config.production(),
         "min_players": config.MIN_PLAYERS,
         "max_players": config.MAX_PLAYERS,
         "default_rounds": config.ROUNDS,
