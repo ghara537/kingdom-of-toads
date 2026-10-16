@@ -1,7 +1,7 @@
 # KINGDOM OF TOADS — LIVING DESIGN DOCUMENT
 
-**Version 1.4** — 15 October 2026
-**Status: FINAL for prototyping, now being tuned in play.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values. v1.1–v1.4 carry the changes made since the build became playable (see §11).
+**Version 1.5** — 15 October 2026
+**Status: FINAL for prototyping, now being tuned in play.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values. v1.1–v1.5 carry the changes made since the build became playable (see §11).
 
 ---
 
@@ -31,22 +31,22 @@ Kingdom of Toads is a competitive engine-building board game for 2–6 players. 
 | **Flies**     | **25** |
 | **Gold**      | **10** |
 | **Toads**     | **2**  |
-| **Happiness** | **10** |
+| **Happiness** | **8**  |
 
 Setup is now fully specified.
 
-**Opening round math**, at 10 happiness (the 6–10 band, 3 flies per toad):
+**Opening round math**, at 8 happiness (the 6–10 band, 3 flies per toad):
 
-- 25 flies buys the full **4-toad cap** for 12 flies, leaving 13 — the cap, not the purse, is the round-1 brake.
-- That leaves you with 6 toads to place.
-- Six toads all in Fields harvests 12 flies; feeding those six costs 6. You end round 1 with roughly 19 flies and 6 toads.
+- 25 flies buys the full **3-toad cap** for 9 flies, leaving 16 — the cap, not the purse, is the round-1 brake.
+- That leaves you with 5 toads to place.
+- Five toads all in Fields harvests 10 flies; feeding those five costs 5. You end round 1 with roughly 21 flies and 5 toads.
 - 10 gold covers three minimum bids of 3, or one serious bid on a card you actually want.
 
 **Starting flies were raised from 10 to 25 in v1.3.** At 10 the opening was a single scripted move — three toads was all anyone could afford — and a player who lost the first fly majority spent two rounds climbing out of it. 25 makes round 1 a choice between filling the cap, banking flies against the feeding squeeze, and how hard to open on the slate. The squeeze itself is unchanged: it bites from round 2 on, when the toad count rather than the opening purse sets the bill.
 
 **Starting gold was raised from 5 to 10 in v1.1.** At 5, a player who won the first card of the slate was immediately below the 3-gold eligibility floor and locked out of the rest of the round; simulation showed roughly seven of the twenty-four cards revealed in a 6-round, 4-player game going unsold because nobody left could bid. Ten gold keeps two or three players live through a whole slate, which is what makes the face-up slate a budgeting problem rather than a race to card one.
 
-**Note that 10 sits at the very top of its band.** A single toad in Rest during round 1 pushes you to 11 happiness and drops recruitment from 3 flies to 2 for the rest of the game — a 33% discount for one toad-round. That is a very strong round-1 play and possibly an obvious one. Worth watching whether every player opens the same way; if so, starting at 9 or 11 instead would make the first decision less scripted.
+**Starting happiness moved from 10 to 8 in v1.5, for exactly the reason the old note here gave.** At 10 — the very top of the 6–10 band — a single toad in Rest bought the 11–15 band and a 33% recruitment discount for the rest of the game. One obvious opening move. At 8 the same toad is worth +1 on the track and nothing else; climbing a band costs three toad-rounds in Rest, or the Rest majority, which is now worth contesting in its own right.
 
 - War tokens — **value varies by round** (see §5, Phase 3), so these need either printed values or a way to record which round each was won in
 
@@ -101,7 +101,7 @@ The game runs a fixed number of rounds (see §8). Each round has four phases, re
 **Resolved — recruitment is simultaneous and secret. There is no player order anywhere in this game.**
 
 - All players **secretly declare how many toads they are recruiting** and how many flies they are committing, then **reveal together**.
-- Each player may recruit **up to 4 toads** this phase. **Tunable per table since v1.3** (`recruit_cap`); 4 is the default. Toads arriving from a card bypass it.
+- Each player may recruit **up to 3 toads** this phase (**4 before v1.5**). **Tunable per table since v1.3** (`recruit_cap`). Toads arriving from a card bypass it.
 - **Cost is paid in flies only.** Gold cannot be used to recruit.
 - Each toad costs the number of **flies** shown by your current happiness band (§4).
 - Newly recruited toads are available to work in Phase 3 of the same round, and must be fed in Phase 4 of the same round.
@@ -196,7 +196,24 @@ Players simultaneously and **secretly** assign their toads across the four areas
 | **Rest**     | **+1 happiness**                                  |
 | **Military** | Contributes strength to the war, produces nothing |
 
-**Resolved — majority bonuses escalate by +1 each round. There is no halfway doubling.**
+**Resolved (v1.5) — the Rest majority pays in happiness *and* a free toad.** Resting is where a kingdom grows, so winning the rest grows it: the toad arrives after placement, so it works from the next round, but it eats at the end of this one. This is what makes Rest worth contesting rather than a place to park toads for the track — and with recruitment capped at 3, a free toad is a real fraction of a round's growth.
+
+**Resolved (v1.5) — a table picks one of two bonus structures.**
+
+**Ladder** is the original, described below: every round pays a little more than the last.
+
+**Two-phase** instead pays one flat rate for the village rounds and a bigger one from the first city round on, turning on the same round the deck does (`city_from_round`). Two sizes of round rather than six:
+
+| | Fields / Mine | Rest | War token | Tribute |
+| --- | --- | --- | --- | --- |
+| **Village rounds** | +3 | +1 happiness, +1 toad | 3 VP | 1 per loser |
+| **City rounds** | +6 | +2 happiness, +2 toads | 6 VP | 2 per loser |
+
+The war's happiness penalty is unchanged by the phase: every non-winner loses 1, as in ladder mode.
+
+The point of two-phase is legibility and a planning horizon. A ladder asks you to compare round 4 with round 5, which is a small difference you cannot do much about; two phases ask a bigger question with an answer — the city rounds are worth double, so what do you want to be holding when they start? It also lines the bonuses up with the deck, so "the city half" means one thing for the slate and the bonuses alike.
+
+**Resolved — in ladder mode, majority bonuses escalate by +1 each round. There is no halfway doubling.**
 
 - The bonus starts at **+2 in round 1 and increases by 1 each round**. Formula: `bonus = round number + 1`.
 - The **war token's VP value** escalates on the same curve, starting at **2 VP in round 1**. Formula: `war token VP = round number + 1`.
@@ -580,6 +597,8 @@ Closed since v0.1: auction format, auction tie resolution, final-round feeding, 
 ---
 
 ## 11. Change Log
+
+**v1.5 — 15 Oct 2026** — **The Rest majority now hands over a free toad** as well as the happiness, so the one area that produces nothing to spend grows your kingdom instead. **Recruitment capped at 3 a round**, down from 4. **The happiness track starts at 8**, down from 10, removing the scripted round-1 toad into Rest that bought a cheaper band for the whole game. **A table picks its bonus structure**: *ladder*, as before, or *two-phase* — flat rates for the village rounds and double for the city rounds, turning when the deck does (Fields and Mine +3 then +6, Rest +1 happiness and +1 toad then +2 and +2, war 3 VP and 1 tribute then 6 VP and 2). All of it per-table tunable, and the rules page describes whichever structure the table is using.
 
 **v1.4 — 15 Oct 2026** — **Scoring moves off the toad's head and onto awards.** A toad is worth **0 VP** by default (tunable), and there are now **five end-game awards of 5 VP**: most toads and most property cards join most gold, flies and happiness. **No award is counted until after the final feeding** — the running total during the game is cards, war tokens and conditional scorers only, and both the board and the rules page say what it leaves out. **Buying flies with gold is its own action with its own button**, taken before you commit rather than folded into the recruitment form; the two boxes in the recruitment panel are now separately framed and titled, because they do different things. **Dark mode**, following the device by default with a three-way toggle in the header. **Players can change their name in the lobby.**
 

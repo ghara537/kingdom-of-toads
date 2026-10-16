@@ -936,6 +936,7 @@ def _begin_placement(state: GameState) -> None:
 
 def _resolve_placement(state: GameState) -> None:
     rnd = state.round
+    rounds = state.settings.rounds
     tuning = state.settings.tuning
     placements = {
         p.id: _normalise_placement(state.commitments[p.id]["placement"])
@@ -1006,9 +1007,15 @@ def _resolve_placement(state: GameState) -> None:
     for area in config.MAJORITY_AREAS:
         counts = {pid: placements[pid].get(area, 0) for pid in placements}
         winner = _unique_leader(counts, minimum=config.MAJORITY_MIN_TOADS)
-        resource, amount = config.majority_bonus(area, rnd, tuning)
+        awards = config.majority_awards(area, rnd, rounds, tuning)
+        primary = config.MAJORITY_BONUS_CURVES[area]["resource"]
         majorities[area] = {
-            "winner": winner, "resource": resource, "amount": amount,
+            "winner": winner,
+            "resource": primary,
+            "amount": awards.get(primary, 0),
+            # Rest pays happiness and toads together, so the whole award
+            # travels with the result rather than just the headline number.
+            "awards": dict(awards),
         }
         if winner is None:
             _log(
@@ -1019,19 +1026,28 @@ def _resolve_placement(state: GameState) -> None:
             )
             continue
         player = state.player(winner)
-        if resource == config.FLIES:
-            player.flies += amount
-        elif resource == config.GOLD:
-            player.gold += amount
-        elif resource == config.HAPPINESS:
-            happiness[winner] += amount
+        for resource, amount in awards.items():
+            if not amount:
+                continue
+            if resource == config.FLIES:
+                player.flies += amount
+            elif resource == config.GOLD:
+                player.gold += amount
+            elif resource == config.HAPPINESS:
+                happiness[winner] += amount
+            elif resource == config.TOADS:
+                # Arrives after placement, so it works next round — but it
+                # still has to be fed at the end of this one.
+                player.toads += amount
         _log(
             state,
             "majority",
             area=area,
             player=winner,
-            amount=amount,
-            text=f"{player.name} takes the {area.title()} majority (+{amount}).",
+            amount=awards.get(primary, 0),
+            awards=dict(awards),
+            text=f"{player.name} takes the {area.title()} majority "
+                 f"({_award_text(awards)}).",
         )
 
     # (e) war
@@ -1048,11 +1064,12 @@ def _resolve_placement(state: GameState) -> None:
             text="The war is tied — no token, and nobody loses happiness.",
         )
     else:
-        vp = config.war_token_vp(rnd, tuning)
+        war = config.war_award(rnd, rounds, tuning)
+        vp = war["vp"]
         winner = state.player(war_winner)
         winner.war_tokens.append(vp)
         # (f) every other player pays, but only because there was a winner
-        tribute = tuning["war_tribute"]
+        tribute = war["tribute"]
         asked: list[str] = []
         for player in state.players:
             if player.id == war_winner:
@@ -1095,9 +1112,12 @@ def _resolve_placement(state: GameState) -> None:
         strengths=strengths,
         war={
             "winner": war_winner,
-            "vp": config.war_token_vp(rnd, tuning) if war_winner else 0,
+            "vp": config.war_award(rnd, rounds, tuning)["vp"] if war_winner else 0,
             "penalty": config.WAR_LOSS_PENALTY if war_winner else 0,
-            "tribute": tuning["war_tribute"] if war_winner else 0,
+            "tribute": (
+                config.war_award(rnd, rounds, tuning)["tribute"]
+                if war_winner else 0
+            ),
             "owed": list((state.tribute or {}).get("owed", [])),
         },
         rest_empty_penalty=idle_penalty if idle else 0,
@@ -1185,6 +1205,29 @@ def military_strength(player: PlayerState, placement: dict[str, int]) -> int:
         if card.is_engine and card.effect_kind == config.MILITARY_STRENGTH:
             bonus += card.effect_amount
     return toads + bonus
+
+
+_AWARD_WORD = {
+    config.FLIES: "flies",
+    config.GOLD: "gold",
+    config.HAPPINESS: "happiness",
+    config.TOADS: "toads",
+}
+
+
+def _award_text(awards: dict[str, int]) -> str:
+    """"+2 happiness and +1 toad" — the Rest majority pays in two things."""
+    bits = []
+    for resource, amount in awards.items():
+        if not amount:
+            continue
+        word = _AWARD_WORD.get(resource, resource)
+        if amount == 1 and word.endswith("s") and resource != config.HAPPINESS:
+            word = word[:-1]
+        bits.append(f"+{amount} {word}")
+    if not bits:
+        return "nothing"
+    return " and ".join(bits)
 
 
 def _unique_leader(counts: dict[str, int], minimum: int) -> str | None:
@@ -1392,6 +1435,11 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
     # feeding has happened. `end_majority_leaders` says who is ahead on each in
     # the meantime, which is a standing, not a score.
     projection = score(state)
+    rounds = state.settings.rounds
+    fields_award = config.majority_awards(config.FIELDS, rnd, rounds, tuning)
+    mine_award = config.majority_awards(config.MINE, rnd, rounds, tuning)
+    rest_award = config.majority_awards(config.REST, rnd, rounds, tuning)
+    war = config.war_award(rnd, rounds, tuning)
 
     players = []
     for p in state.players:
@@ -1439,11 +1487,16 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
         "recruit_cap": config.recruit_cap(tuning),
         "production": config.production(tuning),
         "bonuses": {
-            "fields": config.majority_bonus(config.FIELDS, rnd, tuning)[1],
-            "mine": config.majority_bonus(config.MINE, rnd, tuning)[1],
-            "rest": config.majority_bonus(config.REST, rnd, tuning)[1],
-            "war_token_vp": config.war_token_vp(rnd, tuning),
+            "fields": fields_award.get(config.FLIES, 0),
+            "mine": mine_award.get(config.GOLD, 0),
+            "rest": rest_award.get(config.HAPPINESS, 0),
+            # The Rest majority also hands over toads.
+            "rest_toads": rest_award.get(config.TOADS, 0),
+            "war_token_vp": war["vp"],
+            "war_tribute": war["tribute"],
         },
+        # "village" or "city" on a two-phase table, null on a ladder one.
+        "bonus_phase": config.bonus_phase(rnd, state.settings.rounds, tuning),
         # This table's balance numbers, so the UI can label the scoreboard and
         # bots can weigh a toad against a majority without reading globals.
         "tuning": dict(tuning),

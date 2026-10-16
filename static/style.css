@@ -158,6 +158,7 @@ button.tiny { padding: 1px 6px; font-size: 11px; color: var(--muted); }
 #screen-rules p { margin: 0 0 10px; }
 #screen-rules ul { margin: 0 0 12px; padding-left: 20px; }
 #screen-rules li { margin-bottom: 4px; }
+.rules-table-scroll { max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .rules-table { margin: 0 0 14px; max-width: 620px; }
 .rules-table td:first-child, .rules-table th:first-child { text-align: left; }
 .rules-changed-list li { font-family: ui-monospace, monospace; font-size: 13px; }
@@ -280,6 +281,11 @@ table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-tr
 .slate-card.done { opacity: .6; }
 .slate-card.burned { opacity: .6; background: var(--tint-burn); }
 .slate-card .title { font-weight: 600; font-size: 13px; }
+/* What the card scores, on the card: you are bidding gold for it. */
+.slate-card .title .vp {
+  display: block; font-weight: 400; font-size: 11px; color: var(--muted);
+  font-family: ui-monospace, monospace;
+}
 .slate-card .text { color: var(--muted); margin: 3px 0; min-height: 30px; }
 .slate-card .outcome { font-family: ui-monospace, monospace; font-size: 11px; }
 .slate-card .order { float: right; color: var(--muted); font-family: ui-monospace, monospace; }
@@ -321,6 +327,8 @@ table.seats th { color: var(--muted); font-weight: 500; font-size: 12px; text-tr
 .scoreboard th, .scoreboard td { padding: 5px 8px; border-bottom: 1px solid var(--line); text-align: right; font-family: ui-monospace, monospace; font-size: 13px; }
 .scoreboard th:first-child, .scoreboard td:first-child { text-align: left; font-family: inherit; }
 .scoreboard tr.winner { background: var(--tint-win); font-weight: 700; }
+/* Where a two-phase table steps up to its city rates. */
+.scoreboard tr.phase-turn td { border-top: 2px solid var(--accent); }
 
 /* ------------------------------------------------------------ tuning form */
 

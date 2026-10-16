@@ -555,7 +555,13 @@ class Balanced(Bot):
             needed = _rival_area_estimate(view, self.player_id, area) + 1
             if needed > me["toads"]:
                 continue
-            ratio = view["bonuses"][area] / needed
+            value = view["bonuses"][area]
+            if area == config.REST:
+                # The free toad is the better half of this award, so price it
+                # at what a toad would cost to recruit right now.
+                value += (view["bonuses"].get("rest_toads", 0)
+                          * me["recruit_cost"])
+            ratio = value / needed
             if ratio > best_ratio:
                 best_area, best_needed, best_ratio = area, needed, ratio
         if best_area is None:

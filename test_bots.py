@@ -187,6 +187,9 @@ def test_bots_top_up_an_area_to_switch_on_an_owned_engine_card():
     state.commitments = {}
     state.auction = None
     state.player("p1").toads = 5
+    # Comfortably above the bot's happiness floor, so what is under test is the
+    # card threshold rather than the pull into Rest.
+    state.player("p1").happiness = 12
     state.player("p1").cards = ["deep_vein"]     # needs 3 in Mine
     placement = bots.make("farmer", "p1", random.Random(0)).place(view_for(state, "p1"))
     assert placement[config.MINE] >= 3

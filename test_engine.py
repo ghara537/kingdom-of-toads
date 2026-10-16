@@ -144,16 +144,18 @@ def test_recruitment_costs_the_happiness_band_rate():
     state = make_game(2)
     state.players[0].happiness = 17  # 1 fly per toad
     state.players[1].happiness = 3   # 4 flies per toad
+    cap = config.recruit_cap(state.settings.tuning)
     state = commit_all(
         state,
         {
-            "p1": {"type": "recruit", "count": 4},
+            "p1": {"type": "recruit", "count": cap},
             "p2": {"type": "recruit", "count": 2},
         },
     )
-    assert state.players[0].toads == 6
-    assert state.players[0].flies == config.START_FLIES - 4   # 4 at 1 fly each
-    assert state.players[1].toads == 4
+    assert state.players[0].toads == config.START_TOADS + cap
+    # the whole cap at 1 fly each
+    assert state.players[0].flies == config.START_FLIES - cap
+    assert state.players[1].toads == config.START_TOADS + 2
     assert state.players[1].flies == config.START_FLIES - 8   # 2 at 4 flies each
 
 
@@ -373,7 +375,7 @@ def test_instant_cards_resolve_on_purchase():
     # p1 is down to 2 gold and out of the auction, so p2 bids alone.
     assert engine.pending_players(state) == ["p2"]
     state = engine.submit_action(state, "p2", {"type": "bid", "amount": 3})
-    assert state.player("p2").happiness == 15  # 10 + 5
+    assert state.player("p2").happiness == config.START_HAPPINESS + 5
 
 
 def test_toads_from_an_instant_are_placeable_the_same_round():
@@ -542,8 +544,10 @@ def test_production_rates():
     # 2*2 production + 2 Fields majority
     assert p1.flies == config.START_FLIES + 6
     assert p1.gold == config.START_GOLD + 4   # 2*1 production + 2 Mine majority
-    # 10 + 1 rest + 1 Rest majority (round 1) - 1 war loss = 11
-    assert p1.happiness == 11
+    # 1 rest production + 1 Rest majority (round 1) - 1 war loss
+    assert p1.happiness == config.START_HAPPINESS + 1
+    # The Rest majority hands over a toad as well, fed at the end of the round.
+    assert p1.toads == 4 + config.TUNING_DEFAULTS["rest_bonus_toads"]
     # Military produces nothing
     assert state.player("p2").flies == config.START_FLIES
 
@@ -582,7 +586,7 @@ def test_an_empty_area_awards_no_majority():
     state = commit_all(state, {"p1": place(fields=2), "p2": place(fields=2)})
     # Nobody was in Mine or Rest, so no gold or happiness bonus was handed out.
     assert [p.gold for p in state.players] == [config.START_GOLD] * 2
-    assert [p.happiness for p in state.players] == [10, 10]
+    assert [p.happiness for p in state.players] == [config.START_HAPPINESS] * 2
 
 
 def test_majority_bonuses_escalate_with_the_round():
@@ -608,7 +612,8 @@ def test_war_winner_takes_the_token_and_everyone_else_loses_happiness():
         {"p1": place(military=2), "p2": place(military=1, fields=1), "p3": place(fields=2)},
     )
     assert state.player("p1").war_tokens == [4]     # round + 1
-    assert happiness(state) == {"p1": 10, "p2": 9, "p3": 9}
+    start = config.START_HAPPINESS
+    assert happiness(state) == {"p1": start, "p2": start - 1, "p3": start - 1}
 
 
 def test_war_tie_awards_no_token_and_costs_nobody_happiness():
@@ -626,7 +631,8 @@ def test_war_tie_awards_no_token_and_costs_nobody_happiness():
         },
     )
     assert all(p.war_tokens == [] for p in state.players)
-    assert happiness(state) == {"p1": 10, "p2": 10, "p3": 10}
+    start = config.START_HAPPINESS
+    assert happiness(state) == {"p1": start, "p2": start, "p3": start}
     assert any(e["type"] == "war_tie" for e in state.log)
 
 
@@ -637,7 +643,7 @@ def test_no_military_at_all_is_a_tie_not_a_win():
         p.toads = 2
     state = commit_all(state, {"p1": place(fields=2), "p2": place(rest=2)})
     assert all(p.war_tokens == [] for p in state.players)
-    assert state.player("p1").happiness == 10
+    assert state.player("p1").happiness == config.START_HAPPINESS
 
 
 def test_strength_cards_need_a_toad_in_military():
@@ -712,7 +718,7 @@ def test_feeding_costs_one_fly_per_toad():
     )
     assert state.player("p1").flies == config.START_FLIES - 4
     assert state.player("p1").toads == 4
-    assert state.player("p1").happiness == 10
+    assert state.player("p1").happiness == config.START_HAPPINESS
 
 
 def test_starvation_is_a_free_choice_and_costs_happiness():
@@ -727,7 +733,8 @@ def test_starvation_is_a_free_choice_and_costs_happiness():
     assert state.player("p1").toads == 1
     # only paid for the one kept
     assert state.player("p1").flies == config.START_FLIES - 1
-    assert state.player("p1").happiness == 7    # 3 starved, 1 happiness each
+    # 3 starved, 1 happiness each
+    assert state.player("p1").happiness == config.START_HAPPINESS - 3
 
 
 def test_you_cannot_feed_more_toads_than_you_have_flies_for():
@@ -1283,11 +1290,13 @@ def test_tadpole_nursery_breeds_a_toad_each_round():
         p.toads = 3
     state.player("p1").cards = ["tadpole_nursery", "tadpole_nursery"]
     state = commit_all(state, {"p1": place(rest=2, fields=1), "p2": place(fields=3)})
-    assert state.player("p1").toads == 5          # two copies, both fire
+    # Two copies, both fire — plus the toad for taking the Rest majority.
+    total = 5 + config.TUNING_DEFAULTS["rest_bonus_toads"]
+    assert state.player("p1").toads == total
     # And the new arrivals have to be fed like anyone else.
     assert state.phase == engine.PHASE_FEED
     with pytest.raises(engine.InvalidAction):
-        engine.submit_action(state, "p1", {"type": "feed", "keep": 6})
+        engine.submit_action(state, "p1", {"type": "feed", "keep": total + 1})
 
 
 def test_almshouse_and_guildhall_score_at_the_end():
@@ -1669,7 +1678,8 @@ def test_public_material_is_visible_to_everyone():
     seen = engine.player_view(state, "p2")["players"][0]
     assert seen["flies"] == config.START_FLIES
     assert seen["gold"] == config.START_GOLD
-    assert seen["toads"] == 2 and seen["happiness"] == 10
+    assert seen["toads"] == config.START_TOADS
+    assert seen["happiness"] == config.START_HAPPINESS
     assert seen["cards"] == ["monument"] and seen["war_tokens"] == [3]
     assert seen["recruit_cost"] == 3
 
@@ -1682,8 +1692,57 @@ def test_view_reports_this_rounds_bonus_values():
         "fields": 6,
         "mine": 6,
         "rest": 3,
+        "rest_toads": 1,
         "war_token_vp": 6,
+        "war_tribute": 1,
     }
+    # A ladder table has no phase; a two-phase one names the half it is in.
+    assert view["bonus_phase"] is None
+
+
+def test_the_two_phase_bonus_pays_one_flat_rate_per_half():
+    """Two sizes of round rather than six, turning when the deck does."""
+    state = make_game(2, tuning={"bonus_mode": config.BONUS_MODE_TWO_PHASE})
+    village, city = [], []
+    for rnd in range(1, state.settings.rounds + 1):
+        state.round = rnd
+        view = engine.player_view(state, "p1")
+        (village if view["bonus_phase"] == config.VILLAGE else city).append(
+            view["bonuses"])
+
+    assert len(village) == 3 and len(city) == 3     # a 6-round game turns at 4
+    assert village == [{
+        "fields": 3, "mine": 3, "rest": 1, "rest_toads": 1,
+        "war_token_vp": 3, "war_tribute": 1,
+    }] * 3
+    assert city == [{
+        "fields": 6, "mine": 6, "rest": 2, "rest_toads": 2,
+        "war_token_vp": 6, "war_tribute": 2,
+    }] * 3
+
+
+def test_two_phase_pays_out_in_a_real_round():
+    state = make_game(2, tuning={
+        "bonus_mode": config.BONUS_MODE_TWO_PHASE, "rest_empty_penalty": 0,
+    })
+    state.round = 4                      # the first city round
+    set_phase(state, engine.PHASE_PLACEMENT)
+    for p in state.players:
+        p.toads = 3
+    state = commit_all(state, {
+        "p1": place(rest=3),             # Rest majority: happiness and toads
+        "p2": place(fields=2, military=1),  # Fields majority, and the war
+    })
+    p1, p2 = state.player("p1"), state.player("p2")
+    # +2 happiness for the majority, +3 for resting three, -1 for losing the war
+    assert p1.happiness == config.START_HAPPINESS + 4
+    assert p1.toads == 3 + 2             # the city half hands over two toads
+    # 2*2 production + the flat city Fields bonus of 6
+    assert p2.flies == config.START_FLIES + 10
+    assert p2.war_tokens == [6]          # a city war token, not round + 1
+    # Two resources of tribute, so p1 is asked what to pay with.
+    assert state.phase == engine.PHASE_TRIBUTE
+    assert state.tribute["amount"] == 2
 
 
 # ---------------------------------------------------------------------------

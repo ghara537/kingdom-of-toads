@@ -187,7 +187,10 @@ async function renderRules() {
     changed.appendChild(el('h3', null, 'Changed from the defaults'));
     const list = el('ul', 'rules-changed-list');
     for (const c of data.changed) {
-      list.appendChild(el('li', null, `${c.label}: ${c.value} (default ${c.default})`));
+      // A setting that names a choice reads by name; a quantity reads as itself.
+      const now = c.value_label || c.value;
+      const was = c.default_label || c.default;
+      list.appendChild(el('li', null, `${c.label}: ${now} (default ${was})`));
     }
     changed.appendChild(list);
   }
@@ -204,6 +207,9 @@ async function renderRules() {
         block.items.forEach((i) => list.appendChild(el('li', null, i)));
         body.appendChild(list);
       } else if (block.kind === 'table') {
+        // Some of these are wide — the per-round bonuses, the deck — so they
+        // scroll on their own rather than pushing the page sideways.
+        const scroller = el('div', 'rules-table-scroll');
         const table = el('table', 'scoreboard rules-table');
         const head = el('tr');
         block.head.forEach((h) => head.appendChild(el('th', null, h)));
@@ -213,7 +219,8 @@ async function renderRules() {
           row.forEach((c) => tr.appendChild(el('td', null, c)));
           table.appendChild(tr);
         }
-        body.appendChild(table);
+        scroller.appendChild(table);
+        body.appendChild(scroller);
       }
     }
   }
@@ -313,6 +320,8 @@ const GROUP_LABEL = {
   start: 'Starting resources',
   recruit: 'Recruiting',
   production: 'Production per toad',
+  bonus: 'Round bonuses',
+  two_phase: 'Two-phase bonuses (bonus structure 1)',
   auction: 'Auction floor',
   scoring: 'End-game scoring',
   fields: 'Fields majority',
@@ -378,24 +387,48 @@ function renderTuningPreview() {
   host.innerHTML = '';
   const table = el('table', 'scoreboard');
   const head = el('tr');
-  ['Round', 'Fields', 'Mine', 'Rest', 'War token'].forEach((h) => {
+  ['Round', 'Fields', 'Mine', 'Rest', 'War token', 'Tribute'].forEach((h) => {
     head.appendChild(el('th', null, h));
   });
   table.appendChild(head);
+
+  // Two structures to preview: the ladder's curves, or the two flat rates of
+  // a two-phase table, which turn on the same round the city deck does.
+  const twoPhase = t.bonus_mode === 1;
+  const cityFrom = Math.max(2, Math.floor(rounds / 2) + 1);
+  const half = (r) => (r >= cityFrom ? 'phase2' : 'phase1');
   const curve = (area, r) => Math.ceil(
     (t[`${area}_bonus_base`] + t[`${area}_bonus_per_round`] * r)
     / Math.max(1, t[`${area}_bonus_divisor`]));
+  const area = (which, r) => twoPhase
+    ? t[`${half(r)}_area_bonus`] : curve(which, r);
+  const restHappy = (r) => twoPhase ? t[`${half(r)}_happiness`] : curve('rest', r);
+  const restToads = (r) => twoPhase
+    ? t[`${half(r)}_toads`] : t.rest_bonus_toads;
+  const warVp = (r) => twoPhase
+    ? t[`${half(r)}_war_vp`] : t.war_token_base + t.war_token_per_round * r;
+  const tribute = (r) => twoPhase ? t[`${half(r)}_tribute`] : t.war_tribute;
+
   for (let r = 1; r <= rounds; r++) {
-    const tr = el('tr');
-    tr.appendChild(el('td', null, 'R' + r));
-    tr.appendChild(el('td', null, '+' + curve('fields', r)));
-    tr.appendChild(el('td', null, '+' + curve('mine', r)));
-    tr.appendChild(el('td', null, '+' + curve('rest', r)));
-    tr.appendChild(el('td', null, (t.war_token_base + t.war_token_per_round * r) + ' VP'));
+    const tr = el('tr', twoPhase && r === cityFrom ? 'phase-turn' : '');
+    tr.appendChild(el('td', null,
+      'R' + r + (twoPhase ? (r >= cityFrom ? ' city' : ' village') : '')));
+    tr.appendChild(el('td', null, '+' + area('fields', r)));
+    tr.appendChild(el('td', null, '+' + area('mine', r)));
+    tr.appendChild(el('td', null, `+${restHappy(r)} happy`
+      + (restToads(r) ? ` +${restToads(r)} toad${restToads(r) > 1 ? 's' : ''}` : '')));
+    tr.appendChild(el('td', null, warVp(r) + ' VP'));
+    tr.appendChild(el('td', null, String(tribute(r))));
     table.appendChild(tr);
   }
   host.appendChild(el('h4', null, 'What that produces'));
   host.appendChild(table);
+  host.appendChild(el('p', 'hint', twoPhase
+    ? `Two-phase: one flat rate for rounds 1–${cityFrom - 1}, a bigger one `
+      + `from round ${cityFrom} on, where the city deck starts. The ladder `
+      + 'curves below are ignored.'
+    : 'Ladder: every round pays a little more than the last. The two-phase '
+      + 'numbers are ignored.'));
   const awards = [
     ['most toads', t.vp_most_toads], ['most happiness', t.vp_most_happiness],
     ['most gold', t.vp_most_gold], ['most flies', t.vp_most_flies],
@@ -1025,10 +1058,14 @@ function renderMat(me, v) {
     rest: `+${rate('rest', 'happiness', 1)} happiness / toad`,
     military: 'no production',
   };
+  const restToads = v.bonuses.rest_toads || 0;
   const bonuses = {
     fields: `Majority <b>+${v.bonuses.fields}</b> flies`,
     mine: `Majority <b>+${v.bonuses.mine}</b> gold`,
-    rest: `Majority <b>+${v.bonuses.rest}</b> happiness`,
+    rest: `Majority <b>+${v.bonuses.rest}</b> happiness`
+      + (restToads
+        ? ` and <b>+${restToads}</b> toad${restToads > 1 ? 's' : ''}`
+        : ''),
     military: `War token <b>${v.bonuses.war_token_vp}</b> VP`,
   };
 
@@ -1048,9 +1085,12 @@ function renderMat(me, v) {
       warn.innerHTML = `Empty: <b>\u2212${rules.rest_empty_penalty}</b> happiness`;
       box.appendChild(warn);
     }
-    if (area === 'military' && rules.war_tribute) {
+    // This round's tribute, which a two-phase table changes at the turn.
+    const tribute = v.bonuses.war_tribute !== undefined
+      ? v.bonuses.war_tribute : rules.war_tribute;
+    if (area === 'military' && tribute) {
       const note = el('div', 'bonus');
-      note.innerHTML = `Losers pay <b>${rules.war_tribute}</b> to the winner`;
+      note.innerHTML = `Losers pay <b>${tribute}</b> to the winner`;
       box.appendChild(note);
     }
     if (editable) {
@@ -1220,10 +1260,25 @@ function seatOf(id) {
   return (S.table.seats || []).find((s) => s.player_id === id);
 }
 
+/* The order to list players in, anywhere on screen: seat order, which never
+ * changes for the whole game.
+ *
+ * `seat_order` is NOT it. That starts at the first player marker and rotates a
+ * seat every round, which is right for the one thing it describes — who opens
+ * a live auction — and wrong for everything on screen. Every simultaneous
+ * phase is orderless, so a panel that reshuffles each round just costs you the
+ * habit of knowing where your rivals are, and stops the opponents panel and
+ * the results table agreeing with each other. The marker moves; the rows do
+ * not.
+ */
+function displayOrder(v) {
+  return v.players.map((p) => p.id);
+}
+
 function renderOpponents(v) {
   const host = $('opponents');
   host.innerHTML = '';
-  const order = v.seat_order || v.players.map((p) => p.id);
+  const order = displayOrder(v);
   for (const pid of order) {
     const p = v.players.find((x) => x.id === pid);
     const seat = seatOf(pid) || {};
@@ -1297,6 +1352,18 @@ function renderOpponents(v) {
   }
 }
 
+/* What a card is worth on paper. Conditional scorers print nothing — their
+ * effect line carries the value — so they say so rather than claiming 0. */
+function vpLabel(c) {
+  return c.vp ? `${c.vp} VP` : 'VP varies';
+}
+
+/* A flat scoring card's whole effect IS its printed VP, so with the value now
+ * on the card the effect line would just repeat it. */
+function effectLine(c) {
+  return c.text === vpLabel(c) ? 'No effect — just points.' : c.text;
+}
+
 function renderAuction(v) {
   const host = $('auction-panel');
   host.innerHTML = '';
@@ -1320,8 +1387,14 @@ function renderAuction(v) {
     box.dataset.card = entry.card;
     const title = el('div', 'title', c.name);
     title.appendChild(el('span', 'order', '#' + (i + 1)));
+    const vp = el('span', 'vp', vpLabel(c));
+    vp.title = c.vp
+      ? 'Printed victory points, scored at the end of the game just for '
+        + 'owning it.'
+      : 'This one scores off what you hold at the end — see the effect above.';
+    title.appendChild(vp);
     box.appendChild(title);
-    box.appendChild(el('div', 'text', c.text));
+    box.appendChild(el('div', 'text', effectLine(c)));
     const out = el('div', 'outcome');
     if (entry.status === 'sold') {
       out.textContent = `${nameOf(v, entry.winner)} — ${entry.price} gold`;
@@ -1358,8 +1431,8 @@ function renderUpcoming(v, host) {
     const title = el('div', 'title', c.name);
     title.appendChild(el('span', 'order', '#' + (i + 1)));
     box.appendChild(title);
-    box.appendChild(el('div', 'text', c.text));
-    box.appendChild(el('div', 'outcome', `${c.vp} VP · next round`));
+    box.appendChild(el('div', 'text', effectLine(c)));
+    box.appendChild(el('div', 'outcome', `${vpLabel(c)} · next round`));
     row.appendChild(box);
   });
   host.appendChild(row);
@@ -1462,9 +1535,10 @@ function renderFlyPurchase(host, me, v, note) {
   box.appendChild(el('h4', null, 'Buy flies with gold'));
   const row = el('div', 'form-row');
   const input = el('input');
-  input.type = 'number'; input.min = '0'; input.max = String(afford);
-  input.value = '0';
-  const label = el('label', null, `Flies to buy, ${rate} gold each (max ${afford})`);
+  input.type = 'number'; input.min = '0'; input.value = '0';
+  // No ceiling printed here: there is no rule capping a purchase, only your
+  // purse, and the running cost below already says what you are spending.
+  const label = el('label', null, `Flies to buy — cost ${rate} gold each`);
   label.appendChild(input);
   row.appendChild(label);
 
@@ -1473,12 +1547,17 @@ function renderFlyPurchase(host, me, v, note) {
   const read = () => Math.max(0, Math.min(afford,
     parseInt(input.value || '0', 10)));
   const update = () => {
+    const asked = Math.max(0, parseInt(input.value || '0', 10));
     const flies = read();
     buy.disabled = flies < 1;
     cost.textContent = flies
       ? `${flies * rate} gold of your ${me.gold} → ${flies} flies, `
         + `giving you ${me.flies + flies}.`
       : `You hold ${me.gold} gold and ${me.flies} flies.`;
+    // Said only when it bites, rather than printed as a limit up front.
+    if (asked > afford) {
+      cost.textContent += ` Your ${me.gold} gold buys ${afford}.`;
+    }
   };
   input.addEventListener('input', update);
   buy.onclick = () => {
@@ -1508,15 +1587,12 @@ function renderRecruit(host, title, me, v) {
     'Bought straight away, before you commit anything. Spend them on toads '
     + 'below, or keep them back to feed the ones you have.');
 
-  // Two separate ceilings, and the player needs to see both: the cap is what
-  // the rules allow this round, affordability is what the purse allows.
-  const affordFlies = Math.floor(me.flies / cost);
-  const affordGold = mode === 1 ? Math.floor(me.gold / goldCost) : 0;
-  const maxFlies = Math.min(cap, affordFlies);
-  const maxGold = mode === 1 ? Math.min(cap, affordGold) : 0;
-  const slash = (afford) => `max ${cap}/${afford}`;
-  const slashNote = 'Cap allowed this round / how many you can afford. '
-    + 'The lower of the two is what you can actually take.';
+  // The max is the cap and only the cap — the one hard rule about how many
+  // toads a round may bring. What you can afford is a separate question,
+  // answered live under the form as you type, because it changes with every
+  // fly you spend and is not a limit the rules impose.
+  const capNote = `The most toads one round may bring at this table. `
+    + 'Whether you can pay for them is worked out below.';
 
   const box = el('div', 'action-group recruit');
   box.appendChild(el('h4', null,
@@ -1525,10 +1601,11 @@ function renderRecruit(host, title, me, v) {
   const row = el('div', 'form-row');
   const input = el('input');
   input.type = 'number'; input.min = '0'; input.value = '0';
-  input.max = String(maxFlies);
+  input.max = String(cap);
   const label = el('label', null,
-    `Toads, ${cost} flies each (${slash(affordFlies)})`);
-  label.title = slashNote;
+    (mode === 1 ? 'With flies' : 'Toads')
+    + ` — cost ${cost} flies each (max ${cap})`);
+  label.title = capNote;
   label.appendChild(input);
   row.appendChild(label);
 
@@ -1536,38 +1613,61 @@ function renderRecruit(host, title, me, v) {
   if (mode === 1) {
     goldInput = el('input');
     goldInput.type = 'number'; goldInput.min = '0';
-    goldInput.max = String(maxGold); goldInput.value = '0';
+    goldInput.max = String(cap); goldInput.value = '0';
     const goldLabel = el('label', null,
-      `Toads, ${goldCost} gold each (${slash(affordGold)})`);
+      `With gold — cost ${goldCost} gold each (max ${cap})`);
     goldLabel.title = 'Priced off your happiness band, plus a premium — the same '
-      + `track that prices flies. ${slashNote}`;
+      + `track that prices flies. ${capNote}`;
     goldLabel.appendChild(goldInput);
     row.appendChild(goldLabel);
   }
 
   const preview = el('p', 'hint');
+  const problem = el('p', 'error');
+  const go = el('button', 'primary', 'Recruit');
+
+  // The box holds the cap to its word: ask for more than the cap and it
+  // snaps back, rather than showing a number the preview quietly ignores.
+  const clamp = (box) => {
+    if (!box) return 0;
+    const n = Math.max(0, Math.min(cap, parseInt(box.value || '0', 10)));
+    if (box.value !== '' && String(n) !== box.value) box.value = String(n);
+    return n;
+  };
   const read = () => {
-    const byFlies = Math.max(0, Math.min(maxFlies,
-      parseInt(input.value || '0', 10)));
-    const byGold = goldInput
-      ? Math.max(0, Math.min(maxGold, parseInt(goldInput.value || '0', 10))) : 0;
+    const byFlies = clamp(input);
+    const byGold = clamp(goldInput);
     return { byFlies, byGold, total: byFlies + byGold };
   };
   const update = () => {
     const { byFlies, byGold, total } = read();
+    const fliesDue = byFlies * cost;
+    const goldDue = byGold * goldCost;
     const bits = [];
-    if (byFlies) bits.push(`${byFlies * cost} flies`);
-    if (byGold) bits.push(`${byGold * goldCost} gold`);
+    if (fliesDue) bits.push(`${fliesDue} flies`);
+    if (goldDue) bits.push(`${goldDue} gold`);
     preview.textContent = `${total} toads for ${bits.join(' + ') || 'nothing'}`
       + ` — you hold ${me.flies} flies and ${me.gold} gold, and will need `
-      + `${me.toads + total} flies to feed everyone.`
-      + (total > cap ? `  Over the cap of ${cap}.` : '');
+      + `${me.toads + total} flies to feed everyone.`;
+
+    // Affordability is checked here rather than printed as a ceiling: the
+    // engine rejects a recruitment it cannot be paid for, so say so before
+    // the commit instead of after it.
+    const problems = [];
+    if (total > cap) problems.push(`That is over the cap of ${cap}.`);
+    if (fliesDue > me.flies) {
+      problems.push(`${fliesDue} flies is more than the ${me.flies} you hold.`);
+    }
+    if (goldDue > me.gold) {
+      problems.push(`${goldDue} gold is more than the ${me.gold} you hold.`);
+    }
+    problem.textContent = problems.join(' ');
+    go.disabled = problems.length > 0;
   };
   for (const inputBox of [input, goldInput]) {
     if (inputBox) inputBox.addEventListener('input', update);
   }
 
-  const go = el('button', 'primary', 'Recruit');
   go.onclick = () => {
     const { byGold, total } = read();
     send({ type: 'recruit', count: total, gold_count: byGold });
@@ -1575,13 +1675,13 @@ function renderRecruit(host, title, me, v) {
   row.appendChild(go);
   box.appendChild(row);
   box.appendChild(preview);
+  box.appendChild(problem);
   host.appendChild(box);
   update();
   host.appendChild(el('p', 'hint',
     'Everyone commits secretly and reveals together — recruiting 0 is a '
     + 'commitment too. Cap is ' + cap + ' toads a round'
-    + (mode === 1 ? ', counting both currencies together' : '')
-    + '. A max of 4/2 means the rules allow 4 and you can afford 2.'));
+    + (mode === 1 ? ', counting both currencies together.' : '.')));
 }
 
 function renderBid(host, title, v, me) {
@@ -1891,17 +1991,30 @@ function who(v, pid) {
 }
 
 function qty(n, resource) {
-  return `${n} ${resource === 'flies' && n === 1 ? 'fly' : resource}`;
+  if (resource === 'flies' && n === 1) return `${n} fly`;
+  if (resource === 'toads' && n === 1) return `${n} toad`;
+  return `${n} ${resource}`;
+}
+
+/* The Rest majority pays happiness and toads together, so a result reads
+ * "+2 happiness and +2 toads". Older log entries only carry the one amount. */
+function awardText(m) {
+  const awards = m.awards || { [m.resource]: m.amount };
+  const bits = Object.entries(awards)
+    .filter(([, n]) => n)
+    .map(([resource, n]) => '+' + qty(n, resource));
+  return bits.join(' and ') || 'nothing';
 }
 
 function cardName(id) {
   return (S.catalog[id] || { name: id }).name;
 }
 
-/* Every seat, in seat order, with what it bid — including the ones that did
- * not bid at all, because a pass is information too. */
+/* Every seat, in the same order as everywhere else, with what it bid —
+ * including the ones that did not bid at all, because a pass is information
+ * too. */
 function bidLine(v, bids) {
-  const order = v.seat_order || v.players.map((p) => p.id);
+  const order = displayOrder(v);
   return order.map((pid) => {
     const amount = (bids || {})[pid];
     return `${nameOf(v, pid)} ${amount ? amount : '—'}`;
@@ -1975,7 +2088,7 @@ function showResults(v, e, index) {
   const card = $('results-card');
   card.innerHTML = '';
   const areas = ['fields', 'mine', 'military', 'rest'];
-  const order = v.seat_order || v.players.map((p) => p.id);
+  const order = displayOrder(v);
   const war = e.war || {};
 
   const title = el('h3', null, `Round ${e.round} — placement results`);
@@ -2015,7 +2128,7 @@ function showResults(v, e, index) {
     } else {
       const m = e.majorities[area] || {};
       text = m.winner
-        ? `${who(v, m.winner)}: +${qty(m.amount, m.resource)}`
+        ? `${who(v, m.winner)}: ${awardText(m)}`
         : 'no majority';
     }
     bonus.appendChild(el('td', null, text));

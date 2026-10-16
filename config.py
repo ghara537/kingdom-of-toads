@@ -49,7 +49,7 @@ MAX_PLAYERS = 6
 START_FLIES = 25
 START_GOLD = 10
 START_TOADS = 2
-START_HAPPINESS = 10
+START_HAPPINESS = 8
 
 # ---------------------------------------------------------------------------
 # Happiness track — DESIGN §4
@@ -70,7 +70,7 @@ RECRUIT_COST_BANDS = (
 # Phase 1 — recruitment
 # ---------------------------------------------------------------------------
 
-RECRUIT_CAP = 4                 # per player per round; toad instants bypass it
+RECRUIT_CAP = 3                 # per player per round; toad instants bypass it
                                 # per-table override: tuning['recruit_cap']
 
 # What gold may do beyond bidding. Modes 1 and 2 both soften the resource
@@ -128,6 +128,10 @@ MAJORITY_BONUS_CURVES = {
     REST: {"resource": HAPPINESS, "base": 0, "per_round": 1, "divisor": 2},
 }
 
+# The Rest majority hands over a toad as well as the happiness. Resting is
+# where a kingdom grows, so winning the rest pays in population.
+REST_BONUS_TOADS = 1
+
 # A majority needs at least this many toads to be awarded at all (ruling 10):
 # an all-zero area awards nothing. Ties award nothing either way.
 MAJORITY_MIN_TOADS = 1
@@ -135,6 +139,31 @@ MAJORITY_MIN_TOADS = 1
 # War token VP = WAR_TOKEN_VP_BASE + WAR_TOKEN_VP_PER_ROUND * round
 WAR_TOKEN_VP_BASE = 1
 WAR_TOKEN_VP_PER_ROUND = 1
+
+# ---------------------------------------------------------------------------
+# How the round bonuses are shaped — DESIGN §5
+#
+# LADDER climbs one step a round, on the curves above: every round is worth a
+# little more than the last.
+#
+# TWO_PHASE instead pays one flat rate for the village half of the game and a
+# bigger flat rate for the city half, turning on the same round the deck does
+# (see city_from_round). Two sizes of round rather than six, which makes the
+# turn from village to city the thing you plan around.
+# ---------------------------------------------------------------------------
+
+BONUS_MODE_LADDER = 0
+BONUS_MODE_TWO_PHASE = 1
+BONUS_MODE = BONUS_MODE_LADDER
+
+# Per half, for TWO_PHASE. "area" covers Fields and Mine alike; Rest pays
+# happiness and toads together; war pays VP and tribute per loser.
+# Keyed by development stage ("village"/"city"), spelled out because VILLAGE
+# and CITY are declared further down with the deck.
+TWO_PHASE = {
+    "village": {"area": 3, "happiness": 1, "toads": 1, "war_vp": 3, "tribute": 1},
+    "city": {"area": 6, "happiness": 2, "toads": 2, "war_vp": 6, "tribute": 2},
+}
 
 # Happiness lost by every non-winner — but only if the war HAS a winner.
 WAR_LOSS_PENALTY = 1
@@ -504,20 +533,98 @@ def recruit_band(happiness: int) -> tuple[int, int, int]:
     raise ValueError(f"happiness {happiness} falls outside every cost band")
 
 
+def bonus_phase(
+    round_number: int, rounds: int, tuning: dict[str, int] | None = None
+) -> str | None:
+    """Which two-phase half this round pays at, or None on a ladder table.
+
+    The halves turn on the same round the deck does, so "the city rounds" means
+    one thing for the slate and the bonuses alike.
+    """
+    t = tuning or TUNING_DEFAULTS
+    if t["bonus_mode"] != BONUS_MODE_TWO_PHASE:
+        return None
+    return development_for_round(round_number, rounds)
+
+
+def _two_phase(phase: str, key: str, tuning: dict[str, int]) -> int:
+    prefix = "phase1" if phase == VILLAGE else "phase2"
+    return tuning[f"{prefix}_{key}"]
+
+
+def majority_awards(
+    area: str,
+    round_number: int,
+    rounds: int,
+    tuning: dict[str, int] | None = None,
+) -> dict[str, int]:
+    """What the majority in `area` pays this round, as {resource: amount}.
+
+    Fields and Mine pay one resource. Rest pays happiness *and* toads — the
+    rest is where a kingdom grows. Military is not a majority area; it fights
+    the war instead (see war_award).
+    """
+    t = tuning or TUNING_DEFAULTS
+    resource = MAJORITY_BONUS_CURVES[area]["resource"]
+    phase = bonus_phase(round_number, rounds, t)
+
+    if phase is None:
+        raw = t[f"{area}_bonus_base"] + t[f"{area}_bonus_per_round"] * round_number
+        divisor = max(1, t[f"{area}_bonus_divisor"])
+        awards = {resource: math.ceil(raw / divisor)}
+        if area == REST and t["rest_bonus_toads"]:
+            awards[TOADS] = t["rest_bonus_toads"]
+        return awards
+
+    if area == REST:
+        return {
+            HAPPINESS: _two_phase(phase, "happiness", t),
+            TOADS: _two_phase(phase, "toads", t),
+        }
+    return {resource: _two_phase(phase, "area_bonus", t)}
+
+
 def majority_bonus(
-    area: str, round_number: int, tuning: dict[str, int] | None = None
+    area: str,
+    round_number: int,
+    tuning: dict[str, int] | None = None,
+    rounds: int = ROUNDS,
 ) -> tuple[str, int]:
-    """(resource, amount) awarded for the majority in `area` this round."""
+    """(resource, amount) for the majority's primary resource.
+
+    A convenience over majority_awards for the callers that only want the
+    headline number. Rest's toad is not in it, so prefer majority_awards
+    anywhere the full award matters.
+    """
+    resource = MAJORITY_BONUS_CURVES[area]["resource"]
+    awards = majority_awards(area, round_number, rounds, tuning)
+    return resource, awards[resource]
+
+
+def war_award(
+    round_number: int, rounds: int, tuning: dict[str, int] | None = None
+) -> dict[str, int]:
+    """What winning the war pays this round: VP, and tribute per loser."""
     t = tuning or TUNING_DEFAULTS
-    raw = t[f"{area}_bonus_base"] + t[f"{area}_bonus_per_round"] * round_number
-    divisor = max(1, t[f"{area}_bonus_divisor"])
-    return MAJORITY_BONUS_CURVES[area]["resource"], math.ceil(raw / divisor)
+    phase = bonus_phase(round_number, rounds, t)
+    if phase is None:
+        return {
+            "vp": t["war_token_base"] + t["war_token_per_round"] * round_number,
+            "tribute": t["war_tribute"],
+        }
+    return {
+        "vp": _two_phase(phase, "war_vp", t),
+        "tribute": _two_phase(phase, "tribute", t),
+    }
 
 
-def war_token_vp(round_number: int, tuning: dict[str, int] | None = None) -> int:
+def war_token_vp(
+    round_number: int,
+    tuning: dict[str, int] | None = None,
+    rounds: int = ROUNDS,
+) -> int:
     """VP value of the war token won in `round_number`."""
-    t = tuning or TUNING_DEFAULTS
-    return t["war_token_base"] + t["war_token_per_round"] * round_number
+    return war_award(round_number, rounds, tuning)["vp"]
 
 
 # ---------------------------------------------------------------------------
@@ -592,6 +699,44 @@ TUNING_FIELDS = (
     ("vp_most_flies", "Most flies", "One-off award. Ties give nobody anything.",
      END_MAJORITIES[FLIES], 0, 50, "scoring"),
 
+    ("bonus_mode", "Bonus structure",
+     "0: ladder — every round pays a little more than the last, on the curves "
+     "below. 1: two-phase — one flat rate for the village rounds and a bigger "
+     "one for the city rounds, turning on the same round the deck does.",
+     BONUS_MODE, 0, 1, "bonus"),
+
+    ("phase1_area_bonus", "Village: Fields and Mine",
+     "Flies or gold for the majority, per round, in the village half.",
+     TWO_PHASE["village"]["area"], 0, 30, "two_phase"),
+    ("phase1_happiness", "Village: Rest happiness",
+     "Happiness for the Rest majority in the village half.",
+     TWO_PHASE["village"]["happiness"], 0, 20, "two_phase"),
+    ("phase1_toads", "Village: Rest toads",
+     "Free toads for the Rest majority in the village half.",
+     TWO_PHASE["village"]["toads"], 0, 10, "two_phase"),
+    ("phase1_war_vp", "Village: war token",
+     "VP on a war token won in the village half.",
+     TWO_PHASE["village"]["war_vp"], 0, 30, "two_phase"),
+    ("phase1_tribute", "Village: tribute",
+     "Resources each loser hands the war's winner in the village half.",
+     TWO_PHASE["village"]["tribute"], 0, 10, "two_phase"),
+
+    ("phase2_area_bonus", "City: Fields and Mine",
+     "Flies or gold for the majority, per round, in the city half.",
+     TWO_PHASE["city"]["area"], 0, 30, "two_phase"),
+    ("phase2_happiness", "City: Rest happiness",
+     "Happiness for the Rest majority in the city half.",
+     TWO_PHASE["city"]["happiness"], 0, 20, "two_phase"),
+    ("phase2_toads", "City: Rest toads",
+     "Free toads for the Rest majority in the city half.",
+     TWO_PHASE["city"]["toads"], 0, 10, "two_phase"),
+    ("phase2_war_vp", "City: war token",
+     "VP on a war token won in the city half.",
+     TWO_PHASE["city"]["war_vp"], 0, 30, "two_phase"),
+    ("phase2_tribute", "City: tribute",
+     "Resources each loser hands the war's winner in the city half.",
+     TWO_PHASE["city"]["tribute"], 0, 10, "two_phase"),
+
     ("fields_bonus_base", "Fields base", "Bonus = (base + step x round) / divisor, rounded up.",
      MAJORITY_BONUS_CURVES[FIELDS]["base"], 0, 20, "fields"),
     ("fields_bonus_per_round", "Fields step", "How much the bonus grows each round.",
@@ -612,6 +757,10 @@ TUNING_FIELDS = (
      MAJORITY_BONUS_CURVES[REST]["per_round"], 0, 10, "rest"),
     ("rest_bonus_divisor", "Rest divisor", "Divide by this to slow the curve down.",
      MAJORITY_BONUS_CURVES[REST]["divisor"], 1, 10, "rest"),
+    ("rest_bonus_toads", "Rest majority toads",
+     "Free toads handed to the Rest majority, on top of the happiness. "
+     "Ladder mode only — two-phase sets its own above.",
+     REST_BONUS_TOADS, 0, 10, "rest"),
     ("rest_empty_penalty", "Empty Rest penalty",
      "Happiness lost by a player who puts nobody in Rest this round. 0 to switch off.",
      REST_EMPTY_PENALTY, 0, 10, "rest"),

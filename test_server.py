@@ -463,6 +463,98 @@ def test_the_rules_track_the_gold_mode(client):
     assert "Gold per toad" not in flat
 
 
+def test_the_rules_describe_every_rule_the_engine_actually_applies(client):
+    """A changed rule that the rules page does not mention is a trap.
+
+    One assertion per rule added or changed since the page was written, so a
+    future change to the engine that forgets this file fails here.
+    """
+    made = create(client, players=4)
+    flat = _flatten(client.get(f"/api/rules?code={made['code']}").json())
+
+    # Austerity is one use per copy, and the spent card still counts.
+    assert "only once: using it consumes the card" in flat
+    assert "still counting as property" in flat
+    assert "once per copy for the whole game" in flat
+
+    # The recruitment cap, and what sits outside it.
+    assert f"up to {config.recruit_cap()} toads a round" in flat
+    assert "from a card or from the Rest majority are on top of it" in flat
+
+    # Starting resources and where the happiness track starts.
+    assert f"{config.START_FLIES}" in flat
+    assert f"track from {config.HAPPINESS_MIN} to {config.HAPPINESS_MAX}" in flat
+    assert "recruitment band at 3 flies a toad" in flat
+
+    # Per-toad production, which is a table setting now.
+    assert "+2 flies" in flat and "+2 gold" in flat
+
+    # The Rest majority pays twice.
+    assert "happiness and a free toad" in flat
+    assert "+1 happy +1 toad" in flat
+
+    # A toad scores nothing per head; the awards do the scoring, at the end.
+    assert "nothing per head" in flat
+    assert "5 one-off awards" in flat
+    assert "Most toads — 5 VP" in flat
+    assert "Most property cards — 5 VP" in flat
+    assert "none of them is counted before the final feeding" in flat
+    assert "straight trade between two awards" in flat
+
+    # Where the points come from at all, said up front.
+    assert "Points come from" in flat
+
+    # The war token's real value, not "the round it was won in".
+    assert "2–7 VP, by the round it was won in" in flat
+
+
+def test_the_rules_describe_the_bonus_structure_in_use(client):
+    ladder = create(client, players=2)
+    flat = _flatten(client.get(f"/api/rules?code={ladder['code']}").json())
+    assert "pays ladder bonuses" in flat
+    assert "two-phase" not in flat
+    assert "Round 1" in flat and "Round 6" in flat
+
+    two = create(client, players=2, tuning={"bonus_mode": 1})
+    flat = _flatten(client.get(f"/api/rules?code={two['code']}").json())
+    assert "pays two-phase bonuses" in flat
+    assert "Round 3 (village)" in flat and "Round 4 (city)" in flat
+    # The village and city rates, and the war that turns with them.
+    assert "+1 happy +1 toad" in flat and "+2 happy +2 toads" in flat
+    assert "3 VP from a village round, 6 VP from a city round" in flat
+    assert "1 in the village rounds and 2 in the city rounds" in flat
+    # And the ladder's language is gone.
+    assert "pays ladder bonuses" not in flat
+
+    changed = {c["label"]: c for c in
+               client.get(f"/api/rules?code={two['code']}").json()["changed"]}
+    # A setting that names a choice reads by name, not as a bare number.
+    assert changed["Bonus structure"]["value_label"] == "two-phase"
+    assert changed["Bonus structure"]["default_label"] == "ladder"
+
+
+def test_the_rules_describe_buying_flies_as_its_own_action(client):
+    """Mode 2 only, and it is a separate action rather than part of a commit."""
+    trade = create(client, players=2, tuning={"gold_mode": 2})
+    flat = _flatten(client.get(f"/api/rules?code={trade['code']}").json())
+    assert "Buying flies is its own action" in flat
+    assert "not part of your secret commitment" in flat
+    assert "settled before you commit how many toads to keep" in flat
+
+    plain = _flatten(client.get("/api/rules").json())
+    assert "Buying flies is its own action" not in plain
+
+
+def test_the_rules_only_claim_there_is_no_turn_order_when_there_is_none(client):
+    blind = _flatten(client.get("/api/rules").json())
+    assert "no turn order at all" in blind
+
+    live = create(client, players=2, auction_mode="live")
+    flat = _flatten(client.get(f"/api/rules?code={live['code']}").json())
+    assert "no turn order in any simultaneous phase" in flat
+    assert "only sets who opens the bidding" in flat
+
+
 def test_an_unknown_table_is_reported_not_guessed(client):
     assert client.get("/api/rules?code=ZZZZZ").status_code == 404
 

@@ -143,11 +143,21 @@ Open **Scoring & bonus values** on the new-table screen. You can set:
   conditional scorers only.
 - **The recruitment cap**, and **flies per toad in Fields** and **gold per toad
   in the Mine**.
-- The **bonus curve for each area**, as `(base + step x round) / divisor`,
-  rounded up. Fields and Mine default to `round + 1`; Rest to `ceil(round / 2)`.
-  Set the Rest divisor to 1 and it escalates as fast as the others; set a step
-  to 0 and the bonus stays flat all game.
-- The **war token curve**, on the same shape.
+- **The bonus structure**, which picks what the next two groups mean:
+  `0` is the **ladder** — every round pays a little more than the last, on the
+  curves below. `1` is **two-phase** — one flat rate through the village
+  rounds and a bigger one from the first city round on, turning on the same
+  round the deck does. The ladder's curves are ignored in two-phase mode and
+  vice versa; the preview table shows whichever is live.
+- The **two-phase rates**, per half: Fields and Mine, Rest happiness, Rest
+  toads, war token VP and tribute per loser.
+- The **ladder bonus curve for each area**, as `(base + step x round) /
+  divisor`, rounded up. Fields and Mine default to `round + 1`; Rest to
+  `ceil(round / 2)`. Set the Rest divisor to 1 and it escalates as fast as the
+  others; set a step to 0 and the bonus stays flat all game.
+- The **war token curve**, on the same shape, and **the toads the Rest
+  majority hands over** (1 by default — the Rest majority pays in happiness
+  and population together).
 
 A live table under the form shows what those numbers actually produce round by
 round, because the curve formula is not something anyone should have to
