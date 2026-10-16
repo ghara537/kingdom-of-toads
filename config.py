@@ -165,7 +165,10 @@ STARVE_HAPPINESS_COST = 1       # happiness per toad returned to supply
 # Scoring — DESIGN §7
 # ---------------------------------------------------------------------------
 
-VP_PER_TOAD = 1
+# A toad is worth nothing by itself: population scores through the most-toads
+# award below, so a big kingdom is worth having without being worth points per
+# head. Set vp_per_toad above 0 for a table that wants to pay per toad too.
+VP_PER_TOAD = 0
 VP_PER_GOLD = 0
 VP_PER_HAPPINESS = 0
 VP_PER_FLY = 0
@@ -173,10 +176,13 @@ VP_PER_FLY = 0
 # War token VP is per the round it was won in; see war_token_vp().
 
 # One-off 5 VP awards checked after the final feeding. Ties award nothing.
+# Nothing here is awarded, or projected, before the final feeding.
 END_MAJORITIES = {
+    TOADS: 5,
     HAPPINESS: 5,
     GOLD: 5,
     FLIES: 5,
+    CARDS: 5,
 }
 
 # Applied in order; first difference wins. Higher is better for all three.
@@ -569,8 +575,16 @@ TUNING_FIELDS = (
      "to cover it.",
      AUCTION_TIE_PENALTY, 0, 30, "auction"),
 
-    ("vp_per_toad", "VP per toad", "Each toad alive after the final feeding.",
+    ("vp_per_toad", "VP per toad",
+     "Each toad alive after the final feeding. 0 by default: population pays "
+     "through the most-toads award instead.",
      VP_PER_TOAD, 0, 20, "scoring"),
+    ("vp_most_toads", "Most toads", "One-off award. Ties give nobody anything.",
+     END_MAJORITIES[TOADS], 0, 50, "scoring"),
+    ("vp_most_cards", "Most property",
+     "One-off award for holding the most property cards. Ties give nobody "
+     "anything.",
+     END_MAJORITIES[CARDS], 0, 50, "scoring"),
     ("vp_most_happiness", "Most happiness", "One-off award. Ties give nobody anything.",
      END_MAJORITIES[HAPPINESS], 0, 50, "scoring"),
     ("vp_most_gold", "Most gold", "One-off award. Ties give nobody anything.",
@@ -636,11 +650,17 @@ def clean_tuning(raw: dict | None) -> dict[str, int]:
 
 
 def end_majorities(tuning: dict[str, int] | None = None) -> dict[str, int]:
+    """The one-off end-game awards and what each is worth at this table.
+
+    Awarded only after the final feeding — never projected mid-game.
+    """
     t = tuning or TUNING_DEFAULTS
     return {
+        TOADS: t["vp_most_toads"],
         HAPPINESS: t["vp_most_happiness"],
         GOLD: t["vp_most_gold"],
         FLIES: t["vp_most_flies"],
+        CARDS: t["vp_most_cards"],
     }
 
 

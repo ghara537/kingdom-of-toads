@@ -1,7 +1,7 @@
 # KINGDOM OF TOADS — LIVING DESIGN DOCUMENT
 
-**Version 1.3** — 12 October 2026
-**Status: FINAL for prototyping, now being tuned in play.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values. v1.1–v1.3 carry the changes made since the build became playable (see §11).
+**Version 1.4** — 15 October 2026
+**Status: FINAL for prototyping, now being tuned in play.** All design questions are resolved. What remains are balance figures to be tested in play, all of which should be tunable constants rather than hard-coded values. v1.1–v1.4 carry the changes made since the build became playable (see §11).
 
 ---
 
@@ -463,7 +463,7 @@ Scored at the end of the final round, after that round's feeding phase.
 
 | Source                  | Value                                                                     |
 | ----------------------- | ------------------------------------------------------------------------- |
-| Each surviving toad     | **1 VP**                                                                  |
+| Each surviving toad     | **0 VP** — population scores through the most-toads award below           |
 | Each war token          | **2–7 VP**, per the round it was won in                                   |
 | Property cards          | **As printed** — 2 VP engine and instant, 5 or 10 VP flat, or conditional |
 | Each gold               | 0 VP                                                                      |
@@ -478,7 +478,9 @@ At 1 VP the toad is still the thing you build, but it pays off through what it p
 
 Watch two things in play. Toad count is still the **first tie-breaker** (§8), so it retains value beyond its 1 VP. And feeding is now cheaper to walk away from — see the note in §5, Phase 4.
 
-**Simulation note (v1.2): dropping the toad to 0 VP was tested and not adopted.** Across 250 bot games at 4 players:
+**Resolved (v1.4) — the toad is worth 0 VP per head, and most toads is worth 5.** The v1.2 note below is kept because its finding still holds: toad VP was amplifying an advantage that does not come from toad VP. What changed is the other half of the trade. A toad worth nothing per head is free to cull in the last round, which is exactly what the simulation predicted — so population now has a prize of its own, on the same 5 VP footing as gold, flies and happiness, and culling your kingdom to win most flies costs you most toads. The two awards pull against each other, which is the tension the per-head VP was standing in for.
+
+**Simulation note (v1.2): dropping the toad to 0 VP was tested and not adopted at the time.** Across 250 bot games at 4 players:
 
 | VP per toad | Population strategy wins | Winner-to-last spread | Toads starved per game |
 | ----------- | ------------------------ | --------------------- | ---------------------- |
@@ -492,25 +494,28 @@ The cost of zero is that a toad becomes free to discard. Starvation rose by a qu
 
 So the lever for closing the gap is not the toad's VP. It is the end-game majorities, which is where that player's points actually come from.
 
-### End-game majority bonuses
+### End-game awards
 
-**Resolved — three one-off awards of 5 VP each, checked once at final scoring:**
+**Resolved — five one-off awards of 5 VP each, checked once at final scoring:**
 
-| Award              | Value |
-| ------------------ | ----- |
-| **Most happiness** | 5 VP  |
-| **Most gold**      | 5 VP  |
-| **Most flies**     | 5 VP  |
+| Award                  | Value |
+| ---------------------- | ----- |
+| **Most toads**         | 5 VP  |
+| **Most happiness**     | 5 VP  |
+| **Most gold**          | 5 VP  |
+| **Most flies**         | 5 VP  |
+| **Most property cards**| 5 VP  |
 
-- These are the **only** way gold, happiness and flies contribute to your final score.
+- These are the **only** way toads, gold, happiness and flies contribute to your final score. Property also scores as printed, so most property is a bonus on top rather than its only value.
+- **Resolved (v1.4) — none of them is counted before the final feeding.** The running score shown during the game excludes them, and the UI says so. Mid-game they would swing on a single fly, read as points nobody has won yet, and make a close game look decided.
 - **Ties award nothing**, consistent with the majority rule in Phase 3. If two players tie for most flies, neither takes the 5 VP.
 - These are checked **after the final round's feeding phase**, at the same moment as everything else. Toads starved in round 6 are already gone when "most flies" is counted.
 
 Notes on what this does to the endgame:
 
-**All three resources now behave identically at scoring time** — worthless in bulk, worth exactly 5 VP if you top the table. That's clean and easy to teach, and it means a player can pick one track to win rather than spreading thin across all three.
+**Every track now behaves identically at scoring time** — worthless in bulk, worth exactly 5 VP if you top the table. That's clean and easy to teach, and it means a player can pick one track to win rather than spreading thin across all five.
 
-**The final feeding phase stays tense.** Starving a toad saves 1 fly but costs 1 VP, so it is worth doing whenever a couple of flies would swing the 5 VP fly majority. Since v1.1 this is a live calculation rather than a rare one — see §5, Phase 4.
+**The final feeding phase stays tense.** Starving a toad saves a fly and costs nothing per head, but the flies it frees are chasing one 5 VP award while the toads it costs are chasing another. The cull is now a choice between two prizes rather than a cheap trade — see §5, Phase 4.
 
 **Happiness is now purely instrumental plus a prize.** It gates recruitment all game and awards 5 VP at the end. That's a much lighter load than v0.6 put on it.
 
@@ -575,6 +580,8 @@ Closed since v0.1: auction format, auction tie resolution, final-round feeding, 
 ---
 
 ## 11. Change Log
+
+**v1.4 — 15 Oct 2026** — **Scoring moves off the toad's head and onto awards.** A toad is worth **0 VP** by default (tunable), and there are now **five end-game awards of 5 VP**: most toads and most property cards join most gold, flies and happiness. **No award is counted until after the final feeding** — the running total during the game is cards, war tokens and conditional scorers only, and both the board and the rules page say what it leaves out. **Buying flies with gold is its own action with its own button**, taken before you commit rather than folded into the recruitment form; the two boxes in the recruitment panel are now separately framed and titled, because they do different things. **Dark mode**, following the device by default with a three-way toggle in the header. **Players can change their name in the lobby.**
 
 **v1.3 — 12 Oct 2026** — **Austerity is now one use per copy for the whole game** rather than once a round: using it spends the card, which stays on the table for its victory points and its property count. **Starting flies raised from 10 to 25**, so round 1 is a choice rather than a scripted three-toad opening. **Three more numbers are now per-table settings**: the recruitment cap, flies per toad in Fields and gold per toad in the Mine. No change to the happiness track, which still runs 1–20 with everything above the ceiling forfeited.
 

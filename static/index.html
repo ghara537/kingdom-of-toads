@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Kingdom of Toads</title>
 <link rel="stylesheet" href="/static/style.css">
+<script>
+/* Resolve the theme before the first paint, so a dark-mode player never gets a
+   flash of the light board. "system" follows the device; the toggle in the
+   header stores "dark" or "light" to override it. app.js keeps this in sync. */
+(function () {
+  var choice = 'system';
+  try { choice = localStorage.getItem('kot:theme') || 'system'; } catch (e) {}
+  var dark = choice === 'dark' || (choice === 'system'
+    && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+})();
+</script>
 </head>
 <body>
 
@@ -12,6 +24,7 @@
   <h1>Kingdom of Toads</h1>
   <div id="status-line"></div>
   <a id="rules-link" href="/rules" target="_blank" rel="noopener">Rules</a>
+  <button id="theme-button" class="ghost" type="button"></button>
   <button id="pause-button" class="ghost" type="button" hidden>Pause</button>
   <div id="keepalive">
     <span id="keepalive-text"></span>
@@ -77,6 +90,10 @@
     <h2>Lobby</h2>
     <p class="share">Share this link: <code id="share-url"></code>
       <button id="copy-share" class="copy" type="button">Copy</button></p>
+    <div class="form-row" id="rename-row" hidden>
+      <label>Your name <input id="lobby-name" maxlength="20"></label>
+      <button id="rename-seat" type="button">Change name</button>
+    </div>
     <table class="seats">
       <thead><tr><th>Seat</th><th>Who</th><th>Status</th></tr></thead>
       <tbody id="lobby-seats"></tbody>

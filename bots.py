@@ -407,25 +407,36 @@ class Bot:
         affordable = min(me["toads"], flies // config.FEED_COST)
         if view["round"] < view["rounds"]:
             return affordable
-        # Final round: a toad is 2 VP but the fly majority is 5, so starving one
-        # or two to top the fly count can pay. Assume rivals feed everything.
+        # Final round: starving a toad or two to top the fly count can pay, so
+        # weigh the two awards against each other. Assume rivals feed
+        # everything they can.
         rivals = [
             p["flies"] - min(p["toads"], p["flies"])
             for p in view["players"]
             if p["id"] != self.player_id
         ]
+        rival_toads = [
+            min(p["toads"], p["flies"] // config.FEED_COST)
+            for p in view["players"]
+            if p["id"] != self.player_id
+        ]
         # This table's numbers, not the global defaults: the trade only makes
-        # sense against the VP a toad and the fly majority are actually worth.
+        # sense against what a toad and each award are actually worth here.
         scoring = view.get("scoring") or {
             "vp_per_toad": config.VP_PER_TOAD,
             "majorities": config.end_majorities(),
         }
+        awards = scoring["majorities"]
         best, best_score = affordable, -1
         for keep in range(max(0, affordable - 2), affordable + 1):
             flies_left = flies - keep * config.FEED_COST
             score = keep * scoring["vp_per_toad"]
             if rivals and all(flies_left > r for r in rivals):
-                score += scoring["majorities"][config.FLIES]
+                score += awards.get(config.FLIES, 0)
+            # Where a toad is worth nothing per head, the most-toads award is
+            # the only reason not to cull — so it has to be in the sum.
+            if rival_toads and all(keep > r for r in rival_toads):
+                score += awards.get(config.TOADS, 0)
             if score > best_score:
                 best, best_score = keep, score
         return best

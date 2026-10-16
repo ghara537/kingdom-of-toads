@@ -165,6 +165,10 @@ class JoinTable(BaseModel):
     seat_index: int | None = None
 
 
+class RenameSeat(BaseModel):
+    name: str = Field(default="Player", max_length=20)
+
+
 class SeatControl(BaseModel):
     index: int
     kind: str
@@ -216,6 +220,22 @@ async def join_table(code: str, body: JoinTable):
         return error(str(exc))
     await broadcast(table)
     return {"code": table.code, "token": seat.token, "player_id": seat.player_id}
+
+
+@app.post("/api/tables/{code}/name")
+async def rename_seat(code: str, body: RenameSeat, token: str | None = None):
+    """Change your own display name while the table is still in the lobby."""
+    try:
+        table = store.get(code)
+    except table_lib.TableError as exc:
+        return error(str(exc), 404)
+    async with lock_for(code):
+        try:
+            seat = table.rename(token, body.name)
+        except table_lib.TableError as exc:
+            return error(str(exc))
+    await broadcast(table)
+    return {"ok": True, "name": seat.name}
 
 
 @app.post("/api/tables/{code}/configure")

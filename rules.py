@@ -271,29 +271,46 @@ def _feeding(t: dict) -> dict:
 
 def _scoring(t: dict) -> dict:
     rows = [
-        ["Each surviving toad", f"{t['vp_per_toad']} VP"],
+        ["Each surviving toad",
+         f"{t['vp_per_toad']} VP" if t["vp_per_toad"]
+         else "nothing per head — see the most-toads award"],
         ["Each war token", "the round it was won in"],
         ["Property cards", "as printed"],
         ["Gold, flies, happiness", "nothing per unit"],
     ]
-    majorities = [
-        f"Most happiness — {t['vp_most_happiness']} VP",
-        f"Most gold — {t['vp_most_gold']} VP",
-        f"Most flies — {t['vp_most_flies']} VP",
-    ]
-    return {
-        "heading": "Scoring",
-        "blocks": [
-            _p("Scored after the final round's feeding."),
-            _table(["Source", "Value"], rows),
-            _p("Three one-off awards, each to a single leader. A tie awards nothing:"),
-            _ul(majorities),
-            _p(
-                "Tie-breakers, in order: most victory points, then most toads, "
-                "then highest happiness. Still level is a shared win."
-            ),
-        ],
+    labels = {
+        config.TOADS: "Most toads",
+        config.HAPPINESS: "Most happiness",
+        config.GOLD: "Most gold",
+        config.FLIES: "Most flies",
+        config.CARDS: "Most property cards",
     }
+    awards = config.end_majorities(t)
+    majorities = [
+        f"{labels[metric]} — {vp} VP"
+        for metric, vp in awards.items() if vp
+    ]
+    switched_off = [labels[m] for m, vp in awards.items() if not vp]
+    blocks = [
+        _p("Scored after the final round's feeding."),
+        _table(["Source", "Value"], rows),
+        _p(
+            f"{_plural(len(majorities), 'one-off award')}, each to a single "
+            "leader. A tie awards nothing, and none of them is counted before "
+            "the final feeding — they are not part of the running score you "
+            "see during the game:"
+        ),
+        _ul(majorities),
+    ]
+    if switched_off:
+        blocks.append(_p(
+            "Switched off at this table: " + ", ".join(switched_off) + "."
+        ))
+    blocks.append(_p(
+        "Tie-breakers, in order: most victory points, then most toads, "
+        "then highest happiness. Still level is a shared win."
+    ))
+    return {"heading": "Scoring", "blocks": blocks}
 
 
 def _deck(t: dict, players: int) -> dict:

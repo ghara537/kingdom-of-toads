@@ -67,6 +67,34 @@ def test_create_join_and_start(client):
     assert state["view"]["round"] == 1
 
 
+def test_a_player_can_rename_their_own_seat_in_the_lobby(client):
+    made = create(client, players=3, humans=2)
+    code = made["code"]
+    joined = client.post(f"/api/tables/{code}/join", json={"name": "Bea"}).json()
+
+    res = client.post(f"/api/tables/{code}/name?token={joined['token']}",
+                      json={"name": "  Beatrix  "})
+    assert res.json() == {"ok": True, "name": "Beatrix"}
+    seats = client.get(f"/api/tables/{code}").json()["table"]["seats"]
+    assert [s["name"] for s in seats][:2] == ["Host", "Beatrix"]
+
+    # Not your seat, and not a blank name.
+    assert "not your seat" in client.post(
+        f"/api/tables/{code}/name?token=nonsense", json={"name": "Mallory"}
+    ).json()["error"]
+    assert "blank" in client.post(
+        f"/api/tables/{code}/name?token={joined['token']}", json={"name": "   "}
+    ).json()["error"]
+
+    # And the name is locked once the game is under way.
+    client.post(f"/api/tables/{code}/seat?token={made['host_token']}",
+                json={"index": 1, "kind": "bot", "strategy": "balanced"})
+    client.post(f"/api/tables/{code}/start?token={made['host_token']}")
+    assert "locked" in client.post(
+        f"/api/tables/{code}/name?token={made['token']}", json={"name": "Late"}
+    ).json()["error"]
+
+
 def test_only_the_host_may_start_or_configure(client):
     made = create(client, players=2)
     assert client.post(f"/api/tables/{made['code']}/start?token=nonsense").status_code == 403

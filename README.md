@@ -65,6 +65,18 @@ If the table empties for 15 minutes, the instance sleeps. Tunables live in
 Create a table, set some seats to **Human (join by link)**, and send the
 `/t/CODE` URL. Everything below is per-table and needs no configuration.
 
+**The join link has a Copy button** next to it in the lobby. Where the
+clipboard is unavailable — any page not served over HTTPS, or a browser that
+refuses the permission — it selects the link instead and says so.
+
+**Names can be changed in the lobby**, by the player who holds the seat, right
+up until the game starts. After that they are locked: the engine keeps its own
+copy of every name and the log is full of what that name has done.
+
+**Dark mode** follows the device by default. The button in the header cycles
+auto → dark → light and remembers the choice; the theme is resolved before the
+first paint, so there is no flash of the light board.
+
 **Rejoining.** Each seat gets a token stored in `localStorage`, so returning to
 the URL puts you back in your own seat with whatever you had already committed
 this phase. A seat is reserved for its player: nobody else can take it, whether
@@ -124,8 +136,13 @@ Open **Scoring & bonus values** on the new-table screen. You can set:
   below the minimum bid: the design leans on the floor to guarantee a tied
   player can always pay it. (If you set it higher anyway, the engine takes what
   they hold rather than pushing a purse negative.)
-- **VP per toad**, and the three end-game majorities (most happiness / gold /
-  flies) individually — set one to 0 to switch that award off entirely.
+- **VP per toad** (0 by default), and the five end-game awards — most toads,
+  happiness, gold, flies and property — individually. Set one to 0 to switch
+  that award off entirely. None of the awards is counted until after the final
+  feeding, so the score shown during a game is cards, war tokens and
+  conditional scorers only.
+- **The recruitment cap**, and **flies per toad in Fields** and **gold per toad
+  in the Mine**.
 - The **bonus curve for each area**, as `(base + step x round) / divisor`,
   rounded up. Fields and Mine default to `round + 1`; Rest to `ceil(round / 2)`.
   Set the Rest divisor to 1 and it escalates as fast as the others; set a step

@@ -797,11 +797,79 @@ def test_end_game_majorities_award_five_or_nothing():
     state.player("p2").flies = 5      # tied for flies: nobody scores
     state.player("p3").flies = 1
     state.player("p3").happiness = 15
-    result = engine.score(state)
-    assert result["end_majorities"] == {"gold": "p1", "flies": None, "happiness": "p3"}
+    result = engine.score(state, final=True)
+    assert result["end_majorities"] == {
+        "toads": None,          # everyone still holds their starting two
+        "gold": "p1",
+        "flies": None,
+        "happiness": "p3",
+        "cards": None,          # nobody owns any property at all
+    }
     assert result["breakdown"]["p1"]["majorities"] == 5
     assert result["breakdown"]["p3"]["majorities"] == 5
     assert result["breakdown"]["p2"]["majorities"] == 0
+
+
+def test_most_toads_and_most_property_are_awarded():
+    state = make_game(3)
+    state.player("p1").toads = 9
+    state.player("p2").toads = 3
+    state.player("p3").cards = ["monument", "larder", "census"]
+    state.player("p2").cards = ["monument"]
+    result = engine.score(state, final=True)
+    assert result["end_majorities"]["toads"] == "p1"
+    assert result["end_majorities"]["cards"] == "p3"
+    assert result["breakdown"]["p1"]["majorities"] == 5
+    assert result["breakdown"]["p3"]["majorities"] == 5
+
+
+def test_a_toad_is_worth_nothing_per_head_by_default():
+    """Population pays through the most-toads award, not by the head."""
+    state = make_game(2)
+    state.player("p1").toads = 12
+    breakdown = engine.score(state, final=True)["breakdown"]["p1"]
+    assert config.TUNING_DEFAULTS["vp_per_toad"] == 0
+    assert breakdown["toads"] == 0
+    assert breakdown["majority_detail"]["toads"] == 5
+
+
+def test_end_game_awards_are_withheld_until_the_game_is_over():
+    """Mid-game they would swing on a single fly, so they are not counted."""
+    state = make_game(2)
+    state.player("p1").gold = 40
+    state.player("p1").toads = 9
+    state.player("p1").cards = ["monument"]
+
+    running = engine.score(state)                 # defaults to not final
+    assert running["final"] is False
+    assert running["breakdown"]["p1"]["majorities"] == 0
+    assert running["breakdown"]["p1"]["majority_detail"] == {}
+    # Who is ahead is still reported — it is a standing, not a score.
+    assert running["end_majorities"]["gold"] == "p1"
+    assert running["totals"]["p1"] == 5           # the Monument, and nothing else
+
+    final = engine.score(state, final=True)
+    assert final["final"] is True
+    # Gold, toads and property; flies are level, so that one goes unawarded.
+    assert final["breakdown"]["p1"]["majorities"] == 15
+    assert final["totals"]["p1"] == 20
+
+
+def test_the_view_projects_without_the_end_game_awards():
+    state = make_game(2)
+    state.player("p1").gold = 40
+    view = engine.player_view(state, "p1")
+    assert view["projected_is_final"] is False
+    assert view["projected_scores"]["p1"] == 0
+    assert view["end_majority_leaders"]["gold"] == "p1"
+    assert view["scoring"]["majorities"]["toads"] == 5
+
+    # Once the game is finished the projection and the final score agree.
+    state.phase = engine.PHASE_FINISHED
+    state.scores = engine.score(state, final=True)
+    view = engine.player_view(state, "p1")
+    assert view["projected_is_final"] is True
+    assert view["projected_scores"] == state.scores["totals"]
 
 
 def test_tiebreakers_are_vp_then_toads_then_happiness():
@@ -814,13 +882,16 @@ def test_tiebreakers_are_vp_then_toads_then_happiness():
     state.player("p3").toads = 4
     state.player("p2").happiness = 9   # also takes the 5 VP happiness majority
     state.player("p3").cards = ["monument", "monument", "monument"]
-    result = engine.score(state)
-    assert result["totals"]["p2"] > result["totals"]["p1"]
-    assert result["winners"] == ["p3"]  # 8 + 15 VP beats both
+    result = engine.score(state, final=True)
+    assert result["totals"]["p2"] > result["totals"]["p1"]   # 5 VP to 0
+    # p3: 15 VP of Monuments plus the most-property award, against p1 and p2
+    # tied on toads so neither takes that one.
+    assert result["winners"] == ["p3"]
+    assert result["totals"]["p3"] == 20
 
     # A dead-even table is a shared win.
     even = make_game(2)
-    assert sorted(engine.score(even)["winners"]) == ["p1", "p2"]
+    assert sorted(engine.score(even, final=True)["winners"]) == ["p1", "p2"]
 
 
 # ---------------------------------------------------------------------------
@@ -842,9 +913,7 @@ def test_gold_does_nothing_but_bid_by_default():
         )
     assert "does not recruit with gold" in str(exc.value)
     with pytest.raises(engine.InvalidAction) as exc:
-        engine.submit_action(
-            state, "p1", {"type": "recruit", "count": 0, "exchange": 2}
-        )
+        engine.submit_action(state, "p1", {"type": "exchange", "gold": 2})
     assert "does not exchange" in str(exc.value)
 
 
@@ -905,11 +974,16 @@ def test_the_gold_premium_is_tunable():
 
 
 def test_mode_two_buys_flies_to_recruit_with():
+    """Buying flies is its own action, taken before committing a recruitment."""
     state = make_game(2, tuning=GOLD_TRADE)
     state.player("p1").flies = 0
     state.player("p1").gold = 12
+    state = engine.submit_action(state, "p1", {"type": "exchange", "gold": 12})
+    assert state.player("p1").flies == 6     # 12 gold at 2 gold a fly
+    # The trade does not commit the phase: the recruitment is still owed.
+    assert "p1" in engine.pending_players(state)
     state = commit_all(state, {
-        "p1": {"type": "recruit", "count": 2, "gold_count": 0, "exchange": 12},
+        "p1": {"type": "recruit", "count": 2, "gold_count": 0},
         "p2": {"type": "recruit", "count": 0},
     })
     p1 = state.player("p1")
@@ -927,8 +1001,9 @@ def test_mode_two_buys_flies_to_feed_with():
         p.toads = 4
         p.flies = 0
     state.player("p1").gold = 8
+    state = engine.submit_action(state, "p1", {"type": "exchange", "gold": 8})
     state = commit_all(state, {
-        "p1": {"type": "feed", "keep": 4, "exchange": 8},
+        "p1": {"type": "feed", "keep": 4},
         "p2": {"type": "feed", "keep": 0},
     })
     assert state.player("p1").toads == 4         # bought its way out of a cull
@@ -939,24 +1014,17 @@ def test_mode_two_buys_flies_to_feed_with():
 def test_an_exchange_must_be_a_whole_number_of_flies():
     state = make_game(2, tuning=GOLD_TRADE)
     with pytest.raises(engine.InvalidAction) as exc:
-        engine.submit_action(
-            state, "p1", {"type": "recruit", "count": 0, "exchange": 3}
-        )
+        engine.submit_action(state, "p1", {"type": "exchange", "gold": 3})
     assert "multiples of 2" in str(exc.value)
     with pytest.raises(engine.InvalidAction):
-        engine.submit_action(
-            state, "p1", {"type": "recruit", "count": 0, "exchange": 100}
-        )
+        engine.submit_action(state, "p1", {"type": "exchange", "gold": 100})
 
 
 def test_the_exchange_rate_is_tunable():
     state = make_game(2, tuning={"gold_mode": config.GOLD_BUYS_FLIES,
                                  "gold_per_fly": 5})
     state.player("p1").flies = 0
-    state = commit_all(state, {
-        "p1": {"type": "recruit", "count": 0, "exchange": 10},
-        "p2": {"type": "recruit", "count": 0},
-    })
+    state = engine.submit_action(state, "p1", {"type": "exchange", "gold": 10})
     assert state.player("p1").flies == 2
     assert state.player("p1").gold == config.START_GOLD - 10
 
@@ -1406,7 +1474,7 @@ def test_end_game_majorities_use_the_table_values():
     state.player("p1").gold = 40
     state.player("p2").flies = 40
     state.player("p3").happiness = 19
-    breakdown = engine.score(state)["breakdown"]
+    breakdown = engine.score(state, final=True)["breakdown"]
     assert breakdown["p1"]["majorities"] == 12
     assert breakdown["p2"]["majorities"] == 0    # the award was tuned away
     assert breakdown["p3"]["majorities"] == 3

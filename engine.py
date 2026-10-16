@@ -1243,7 +1243,7 @@ def _resolve_feed(state: GameState) -> None:
     state.commitments = {}
 
     if state.round >= state.settings.rounds:
-        state.scores = score(state)
+        state.scores = score(state, final=True)
         state.phase = PHASE_FINISHED
         winners = ", ".join(_name(state, pid) for pid in state.scores["winners"])
         _log(state, "game_end", text=f"Game over. Winner: {winners}.")
@@ -1268,9 +1268,27 @@ def _resolve_feed(state: GameState) -> None:
 # ---------------------------------------------------------------------------
 
 
-def score(state: GameState) -> dict[str, Any]:
-    """Final scoring. Safe to call at any time for a projected score."""
+def end_metric(player: PlayerState, metric: str) -> int:
+    """The value an end-game award is measured on, for one seat."""
+    if metric == config.CARDS:
+        return len(player.cards)
+    if metric == config.WAR_TOKENS:
+        return len(player.war_tokens)
+    return getattr(player, metric)
+
+
+def score(state: GameState, final: bool | None = None) -> dict[str, Any]:
+    """Scoring. Safe to call at any time for a projected score.
+
+    The one-off end-game awards (most toads, gold, flies, happiness, property)
+    are only counted when ``final``, which defaults to "the game is over".
+    Mid-game they would be noise: they swing on a single fly and nobody has
+    won them yet. ``end_majorities`` still reports who is currently ahead on
+    each, so the UI can show what is on offer without banking it.
+    """
     tuning = state.settings.tuning
+    if final is None:
+        final = state.finished
     breakdown: dict[str, dict[str, Any]] = {}
 
     for player in state.players:
@@ -1310,13 +1328,14 @@ def score(state: GameState) -> dict[str, Any]:
             "majority_detail": {},
         }
 
-    # End-game majorities: unique leader only, ties award nothing.
+    # End-game awards: unique leader only, ties award nothing. Scored after
+    # the final feeding and not a moment before.
     majority_results: dict[str, str | None] = {}
     for metric, vp in config.end_majorities(tuning).items():
-        values = {p.id: getattr(p, metric) for p in state.players}
+        values = {p.id: end_metric(p, metric) for p in state.players}
         winner = _unique_leader(values, minimum=1)
         majority_results[metric] = winner
-        if winner is not None:
+        if winner is not None and final:
             breakdown[winner]["majorities"] += vp
             breakdown[winner]["majority_detail"][metric] = vp
 
@@ -1349,6 +1368,8 @@ def score(state: GameState) -> dict[str, Any]:
         "ranking": [p.id for p in ranking],
         "winners": winners,
         "end_majorities": majority_results,
+        # False while the awards above are only a standing, not a score.
+        "final": final,
     }
 
 
@@ -1367,6 +1388,10 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
     waiting = pending_players(state)
     rnd = state.round
     tuning = state.settings.tuning
+    # Mid-game this excludes the end-game awards; it banks them once the final
+    # feeding has happened. `end_majority_leaders` says who is ahead on each in
+    # the meantime, which is a standing, not a score.
+    projection = score(state)
 
     players = []
     for p in state.players:
@@ -1428,7 +1453,9 @@ def player_view(state: GameState, viewer_id: str | None) -> dict[str, Any]:
         },
         "tribute": copy.deepcopy(state.tribute),
         "log": list(state.log),
-        "projected_scores": score(state)["totals"],
+        "projected_scores": projection["totals"],
+        "projected_is_final": projection["final"],
+        "end_majority_leaders": projection["end_majorities"],
         "scores": copy.deepcopy(state.scores),
     }
 

@@ -188,6 +188,24 @@ class Table:
         self._touch()
         return seat
 
+    def rename(self, token: str | None, name: str) -> Seat:
+        """Change the name on the seat holding ``token``.
+
+        Lobby only. Once the game starts the engine holds its own copy of every
+        name, and a seat's name is in the log of everything it has done.
+        """
+        if self.status != LOBBY:
+            raise TableError("names are locked once the game starts")
+        seat = self.seat_by_token(token)
+        if seat is None:
+            raise TableError("that is not your seat")
+        cleaned = name.strip()[:20]
+        if not cleaned:
+            raise TableError("a name cannot be blank")
+        seat.name = cleaned
+        self._touch()
+        return seat
+
     def configure(
         self,
         rounds: int | None = None,

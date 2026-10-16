@@ -19,6 +19,59 @@ function isHost() {
 }
 
 const $ = (id) => document.getElementById(id);
+
+/* -------------------------------------------------------------------- theme
+ *
+ * Three states, cycled by the button in the header: follow the device, force
+ * dark, force light. The inline script in index.html has already resolved the
+ * stored choice into data-theme before first paint; this keeps the attribute
+ * in sync and follows the device while the choice is "system".
+ */
+const THEME_STORE = 'kot:theme';
+const THEMES = ['system', 'dark', 'light'];
+const THEME_FACE = {
+  system: ['\u25D0', 'Auto', 'Following your device. Click for dark.'],
+  dark: ['\u263E', 'Dark', 'Dark board. Click for light.'],
+  light: ['\u2600', 'Light', 'Light board. Click to follow your device.'],
+};
+
+function themeChoice() {
+  try {
+    const stored = localStorage.getItem(THEME_STORE);
+    if (THEMES.includes(stored)) return stored;
+  } catch (e) { /* private browsing: fall through to the default */ }
+  return 'system';
+}
+
+function prefersDark() {
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function applyTheme() {
+  const choice = themeChoice();
+  const dark = choice === 'dark' || (choice === 'system' && prefersDark());
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  const [glyph, word, why] = THEME_FACE[choice];
+  const button = $('theme-button');
+  if (!button) return;
+  button.innerHTML = '';
+  button.appendChild(el('span', 'theme-glyph', glyph));
+  button.appendChild(el('span', 'theme-word', ' ' + word));
+  button.title = why;
+  button.setAttribute('aria-label', `Theme: ${word}`);
+}
+
+function themeInit() {
+  applyTheme();
+  $('theme-button').addEventListener('click', () => {
+    const next = THEMES[(THEMES.indexOf(themeChoice()) + 1) % THEMES.length];
+    try { localStorage.setItem(THEME_STORE, next); } catch (e) { /* ignore */ }
+    applyTheme();
+  });
+  // Someone switching their device to dark at dusk should see the board follow.
+  window.matchMedia('(prefers-color-scheme: dark)')
+    .addEventListener('change', applyTheme);
+}
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -169,6 +222,7 @@ async function renderRules() {
 /* ------------------------------------------------------------------ boot */
 
 async function boot() {
+  themeInit();
   if (location.pathname === '/rules') return renderRules();
   S.cfg = await (await fetch('/api/config')).json();
   S.catalog = await (await fetch('/api/cards')).json();
@@ -186,6 +240,10 @@ async function boot() {
   $('join-table').addEventListener('click', joinTable);
   $('start-game').addEventListener('click', startGame);
   $('copy-share').addEventListener('click', copyShareLink);
+  $('rename-seat').addEventListener('click', renameSeat);
+  $('lobby-name').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') renameSeat();
+  });
 
   const code = codeFromUrl();
   if (code) {
@@ -338,10 +396,18 @@ function renderTuningPreview() {
   }
   host.appendChild(el('h4', null, 'What that produces'));
   host.appendChild(table);
+  const awards = [
+    ['most toads', t.vp_most_toads], ['most happiness', t.vp_most_happiness],
+    ['most gold', t.vp_most_gold], ['most flies', t.vp_most_flies],
+    ['most property', t.vp_most_cards],
+  ].filter(([, vp]) => vp).map(([label, vp]) => `${label} ${vp}`);
   host.appendChild(el('p', 'hint',
-    `A toad scores ${t.vp_per_toad} VP. End-game majorities: `
-    + `${t.vp_most_happiness} happiness / ${t.vp_most_gold} gold / `
-    + `${t.vp_most_flies} flies.`));
+    (t.vp_per_toad
+      ? `A toad scores ${t.vp_per_toad} VP each. `
+      : 'A toad scores nothing per head. ')
+    + `End-game awards, counted only after the final feeding: `
+    + (awards.join(' / ') || 'none')
+    + ' VP.'));
 }
 
 function resetTuning() {
@@ -660,6 +726,34 @@ function selectShareLink() {
   sel.addRange(range);
 }
 
+/* Changing your name is lobby-only: once the game starts the engine holds its
+ * own copy of every name, and the log is full of what that name has done. */
+async function renameSeat() {
+  const input = $('lobby-name');
+  const name = input.value.trim();
+  if (!name) {
+    $('lobby-error').textContent = 'A name cannot be blank.';
+    return;
+  }
+  const res = await fetch(
+    '/api/tables/' + S.code + '/name?token=' + encodeURIComponent(S.token || ''),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+  const data = await res.json();
+  $('lobby-error').textContent = data.error || '';
+  if (!data.error) {
+    const button = $('rename-seat');
+    button.textContent = 'Saved';
+    clearTimeout(button._reset);
+    button._reset = setTimeout(() => {
+      button.textContent = 'Change name';
+    }, 2000);
+  }
+}
+
 function renderLobby() {
   const t = S.table;
   $('share-url').textContent = location.origin + '/t/' + t.code;
@@ -681,12 +775,22 @@ function renderLobby() {
     tr.appendChild(st);
     body.appendChild(tr);
   }
+  // Your own seat's name, offered for editing. Never overwritten while you
+  // are typing in it — the lobby re-renders every time anyone joins.
+  const mine = t.seats.find((s) => s.player_id === t.you);
+  const nameRow = $('rename-row');
+  nameRow.hidden = !mine;
+  const nameInput = $('lobby-name');
+  if (mine && document.activeElement !== nameInput) nameInput.value = mine.name;
+
   const tune = t.tuning || {};
+  const awards = ['toads', 'happiness', 'gold', 'flies', 'cards']
+    .filter((k) => tune['vp_most_' + k]).length;
   $('lobby-settings').textContent =
     `${t.rounds} rounds · ${t.auction_mode} auction · ${t.seats.length} players`
     + ` · ${t.timeout_seconds}s per phase`
-    + ` · ${tune.vp_per_toad} VP a toad`
-    + ` · majorities ${tune.vp_most_happiness}/${tune.vp_most_gold}/${tune.vp_most_flies}`;
+    + (tune.vp_per_toad ? ` · ${tune.vp_per_toad} VP a toad` : '')
+    + ` · ${awards} end-game awards`;
   // The socket only carries our seat token, so the server cannot tell from it
   // whether we are the host. Holding the host token locally is the signal; the
   // server still checks it for real when /start is called.
@@ -1097,7 +1201,14 @@ function renderMyCards(me, v) {
     if (spent) spentLeft -= 1;
     host.appendChild(cardChip(id, spent));
   });
-  $('my-vp').textContent = `· ${v.projected_scores[me.id]} VP projected`;
+  const vp = v.projected_scores[me.id];
+  const label = $('my-vp');
+  label.textContent = v.projected_is_final
+    ? `· ${vp} VP`
+    : `· ${vp} VP so far`;
+  label.title = v.projected_is_final ? '' :
+    'Running total. The one-off end-game awards ('
+    + awardSummary(v) + ' VP) are not counted until the final feeding.';
 }
 
 function nameOf(v, id) {
@@ -1146,7 +1257,11 @@ function renderOpponents(v) {
     stats.appendChild(el('span', 'f', p.flies + ' fly'));
     stats.appendChild(el('span', 'g', p.gold + ' gold'));
     stats.appendChild(el('span', 'h', p.happiness + ' hap'));
-    stats.appendChild(el('span', 'vp', v.projected_scores[pid] + ' VP'));
+    const vpCell = el('span', 'vp', v.projected_scores[pid] + ' VP');
+    if (!v.projected_is_final) {
+      vpCell.title = 'Running total — the end-game awards are not in it yet.';
+    }
+    stats.appendChild(vpCell);
     box.appendChild(stats);
 
     const mini = el('div', 'minitrack');
@@ -1329,6 +1444,55 @@ function describeCommitment(c) {
   return '';
 }
 
+/* A standalone gold-for-flies trade, offered above the recruitment form.
+ *
+ * It is its own action and its own button: the flies land in your purse the
+ * moment you buy them, before you have decided anything about toads. Folding
+ * it into the recruitment commitment made one box look like the other, and the
+ * two do completely different things — one spends gold now, the other commits
+ * a secret decision for the whole phase.
+ */
+function renderFlyPurchase(host, me, v, note) {
+  const rules = v.tuning || {};
+  if (rules.gold_mode !== 2) return;
+  const rate = rules.gold_per_fly || 2;
+  const afford = Math.floor(me.gold / rate);
+
+  const box = el('div', 'action-group buy');
+  box.appendChild(el('h4', null, 'Buy flies with gold'));
+  const row = el('div', 'form-row');
+  const input = el('input');
+  input.type = 'number'; input.min = '0'; input.max = String(afford);
+  input.value = '0';
+  const label = el('label', null, `Flies to buy, ${rate} gold each (max ${afford})`);
+  label.appendChild(input);
+  row.appendChild(label);
+
+  const buy = el('button', null, 'Buy now');
+  const cost = el('span', 'hint');
+  const read = () => Math.max(0, Math.min(afford,
+    parseInt(input.value || '0', 10)));
+  const update = () => {
+    const flies = read();
+    buy.disabled = flies < 1;
+    cost.textContent = flies
+      ? `${flies * rate} gold of your ${me.gold} → ${flies} flies, `
+        + `giving you ${me.flies + flies}.`
+      : `You hold ${me.gold} gold and ${me.flies} flies.`;
+  };
+  input.addEventListener('input', update);
+  buy.onclick = () => {
+    const flies = read();
+    if (flies > 0) send({ type: 'exchange', gold: flies * rate });
+  };
+  row.appendChild(buy);
+  box.appendChild(row);
+  box.appendChild(cost);
+  box.appendChild(el('p', 'hint', note));
+  host.appendChild(box);
+  update();
+}
+
 function renderRecruit(host, title, me, v) {
   title.textContent = 'Recruit toads';
   const rules = v.tuning || {};
@@ -1337,7 +1501,12 @@ function renderRecruit(host, title, me, v) {
   // The table's cap, not the global default: a host can change it.
   const cap = v.recruit_cap !== undefined ? v.recruit_cap : S.cfg.recruit_cap;
   const goldCost = cost + (rules.recruit_gold_premium || 0);
-  const rate = rules.gold_per_fly || 2;
+
+  // Buying flies happens first, and on its own: once bought they are simply
+  // flies, and the form below re-reads your purse.
+  renderFlyPurchase(host, me, v,
+    'Bought straight away, before you commit anything. Spend them on toads '
+    + 'below, or keep them back to feed the ones you have.');
 
   // Two separate ceilings, and the player needs to see both: the cap is what
   // the rules allow this round, affordability is what the purse allows.
@@ -1345,85 +1514,72 @@ function renderRecruit(host, title, me, v) {
   const affordGold = mode === 1 ? Math.floor(me.gold / goldCost) : 0;
   const maxFlies = Math.min(cap, affordFlies);
   const maxGold = mode === 1 ? Math.min(cap, affordGold) : 0;
-  const maxTrade = mode === 2 ? Math.floor(me.gold / rate) : 0;
   const slash = (afford) => `max ${cap}/${afford}`;
   const slashNote = 'Cap allowed this round / how many you can afford. '
     + 'The lower of the two is what you can actually take.';
 
+  const box = el('div', 'action-group recruit');
+  box.appendChild(el('h4', null,
+    mode === 1 ? 'Recruit toads — pay with flies, gold or both'
+      : 'Recruit toads'));
   const row = el('div', 'form-row');
   const input = el('input');
   input.type = 'number'; input.min = '0'; input.value = '0';
-  input.max = String(mode === 2 ? cap : maxFlies);
-  const label = el('label', null, `With flies, ${cost} each`
-    + (mode === 2 ? '' : ` (${slash(affordFlies)})`));
-  if (mode !== 2) label.title = slashNote;
+  input.max = String(maxFlies);
+  const label = el('label', null,
+    `Toads, ${cost} flies each (${slash(affordFlies)})`);
+  label.title = slashNote;
   label.appendChild(input);
   row.appendChild(label);
 
   let goldInput = null;
-  let tradeInput = null;
   if (mode === 1) {
     goldInput = el('input');
     goldInput.type = 'number'; goldInput.min = '0';
     goldInput.max = String(maxGold); goldInput.value = '0';
     const goldLabel = el('label', null,
-      `With gold, ${goldCost} each (${slash(affordGold)})`);
+      `Toads, ${goldCost} gold each (${slash(affordGold)})`);
     goldLabel.title = 'Priced off your happiness band, plus a premium — the same '
       + `track that prices flies. ${slashNote}`;
     goldLabel.appendChild(goldInput);
     row.appendChild(goldLabel);
-  } else if (mode === 2) {
-    tradeInput = el('input');
-    tradeInput.type = 'number'; tradeInput.min = '0';
-    tradeInput.max = String(maxTrade); tradeInput.value = '0';
-    const tradeLabel = el('label', null, `Buy flies, ${rate} gold each (max ${maxTrade})`);
-    tradeLabel.title = 'Converted before you pay, so these flies can buy toads.';
-    tradeLabel.appendChild(tradeInput);
-    row.appendChild(tradeLabel);
   }
 
-  const preview = el('span', 'hint');
+  const preview = el('p', 'hint');
   const read = () => {
-    const traded = tradeInput
-      ? Math.max(0, Math.min(maxTrade, parseInt(tradeInput.value || '0', 10))) : 0;
-    const pool = me.flies + traded;
-    const byFlies = Math.max(0, Math.min(
-      mode === 2 ? Math.floor(pool / cost) : maxFlies,
+    const byFlies = Math.max(0, Math.min(maxFlies,
       parseInt(input.value || '0', 10)));
     const byGold = goldInput
       ? Math.max(0, Math.min(maxGold, parseInt(goldInput.value || '0', 10))) : 0;
-    return { byFlies, byGold, traded, total: byFlies + byGold };
+    return { byFlies, byGold, total: byFlies + byGold };
   };
   const update = () => {
-    const { byFlies, byGold, traded, total } = read();
+    const { byFlies, byGold, total } = read();
     const bits = [];
     if (byFlies) bits.push(`${byFlies * cost} flies`);
     if (byGold) bits.push(`${byGold * goldCost} gold`);
-    if (traded) bits.push(`${traded * rate} gold traded for ${traded} flies`);
     preview.textContent = `${total} toads for ${bits.join(' + ') || 'nothing'}`
       + ` — you hold ${me.flies} flies and ${me.gold} gold, and will need `
       + `${me.toads + total} flies to feed everyone.`
       + (total > cap ? `  Over the cap of ${cap}.` : '');
   };
-  for (const box of [input, goldInput, tradeInput]) {
-    if (box) box.addEventListener('input', update);
+  for (const inputBox of [input, goldInput]) {
+    if (inputBox) inputBox.addEventListener('input', update);
   }
 
-  const go = el('button', 'primary', 'Commit');
+  const go = el('button', 'primary', 'Recruit');
   go.onclick = () => {
-    const { byGold, traded, total } = read();
-    send({
-      type: 'recruit', count: total,
-      gold_count: byGold, exchange: traded * rate,
-    });
+    const { byGold, total } = read();
+    send({ type: 'recruit', count: total, gold_count: byGold });
   };
   row.appendChild(go);
-  host.appendChild(row);
-  host.appendChild(preview);
+  box.appendChild(row);
+  box.appendChild(preview);
+  host.appendChild(box);
   update();
   host.appendChild(el('p', 'hint',
-    'Everyone commits secretly and reveals together. Cap is ' + cap
-    + ' toads a round'
+    'Everyone commits secretly and reveals together — recruiting 0 is a '
+    + 'commitment too. Cap is ' + cap + ' toads a round'
     + (mode === 1 ? ', counting both currencies together' : '')
     + '. A max of 4/2 means the rules allow 4 and you can afford 2.'));
 }
@@ -1551,18 +1707,14 @@ function renderTribute(host, title, v, me) {
 
 function renderFeed(host, title, me, v) {
   title.textContent = 'Feed your toads';
-  const rules = (v && v.tuning) || {};
-  const rate = rules.gold_per_fly || 2;
-  const canTrade = rules.gold_mode === 2;
-  const traded = canTrade ? Math.min(
-    Math.floor(me.gold / rate),
-    Math.max(0, me.toads - Math.floor(me.flies / S.cfg.feed_cost))) : 0;
-  const max = Math.min(me.toads, Math.floor((me.flies + traded) / S.cfg.feed_cost));
-  if (traded) {
-    host.appendChild(el('p', 'hint',
-      `${traded * rate} gold will be traded for ${traded} flies so that `
-      + `${max} toads can eat.`));
-  }
+  // Buying flies is its own action here too, taken before you commit — the
+  // only route from a full purse to a fed kingdom.
+  const short = Math.max(0, me.toads - Math.floor(me.flies / S.cfg.feed_cost));
+  renderFlyPurchase(host, me, v, short
+    ? `You are ${short} flies short of feeding everyone. Buy them before you `
+      + 'commit, or toads starve.'
+    : 'Bought straight away, before you commit.');
+  const max = Math.min(me.toads, Math.floor(me.flies / S.cfg.feed_cost));
 
   if (me.austerity_cost !== null && me.austerity_cost !== undefined) {
     const left = me.austerity_uses_left;
@@ -1592,9 +1744,7 @@ function renderFeed(host, title, me, v) {
       max >= me.toads
         ? `Feed all ${me.toads} toads (\u2212${me.toads * S.cfg.feed_cost} flies)`
         : `Feed the ${max} you can afford (\u2212${max * S.cfg.feed_cost} flies)`);
-    feedAll.onclick = () => send({
-      type: 'feed', keep: max, exchange: traded * rate,
-    });
+    feedAll.onclick = () => send({ type: 'feed', keep: max });
     all.appendChild(feedAll);
     if (max < me.toads) {
       all.appendChild(el('span', 'hint',
@@ -1624,7 +1774,6 @@ function renderFeed(host, title, me, v) {
   const go = el('button', me.toads ? null : 'primary', 'Commit');
   go.onclick = () => send({
     type: 'feed', keep: parseInt(input.value || '0', 10),
-    exchange: traded * rate,
   });
   row.appendChild(go);
   host.appendChild(row);
@@ -1632,18 +1781,36 @@ function renderFeed(host, title, me, v) {
   update();
 }
 
+/* The one-off end-game awards, in the order config lists them. */
+const AWARD_LABEL = {
+  toads: 'most toads', happiness: 'most happiness', gold: 'most gold',
+  flies: 'most flies', cards: 'most property',
+};
+
+function awardSummary(v) {
+  const awards = ((v.scoring || {}).majorities) || {};
+  return Object.entries(awards)
+    .filter(([, vp]) => vp)
+    .map(([metric, vp]) => `${AWARD_LABEL[metric] || metric} ${vp}`)
+    .join(' · ');
+}
+
 function scoreboard(v) {
   const s = v.scores;
   const wrap = el('div');
   const t = el('table', 'scoreboard');
   const head = el('tr');
+  const perToad = (v.tuning || {}).vp_per_toad;
   const columns = [
     ['', ''],
-    ['Toads', `${S.cfg.vp_per_toad} VP each, after the final feeding`],
+    ['Toads', perToad
+      ? `${perToad} VP each, after the final feeding`
+      : 'Nothing per head at this table — see Awards'],
     ['War', 'War tokens, worth the round they were won in'],
     ['Cards', 'Printed VP on every property you own'],
     ['Conditional', 'Census, Treasury and Hall of Victories, counted at the end'],
-    ['Majorities', 'Most happiness, most gold, most flies — 5 VP each, ties award nothing'],
+    ['Awards', 'One-off awards, counted only now: ' + awardSummary(v)
+      + ' VP. A tie awards nothing.'],
     ['Total', ''],
   ];
   for (const [label, why] of columns) {
@@ -1662,9 +1829,10 @@ function scoreboard(v) {
   }
   wrap.appendChild(t);
   const maj = Object.entries(s.end_majorities)
-    .map(([k, pid]) => `${k}: ${pid ? nameOf(v, pid) : 'tied — nobody'}`)
+    .map(([k, pid]) => `${AWARD_LABEL[k] || k}: `
+      + (pid ? nameOf(v, pid) : 'tied — nobody'))
     .join(' · ');
-  wrap.appendChild(el('p', 'hint', 'End-game majorities — ' + maj));
+  wrap.appendChild(el('p', 'hint', 'End-game awards — ' + maj));
   return wrap;
 }
 
